@@ -1,0 +1,11 @@
+#!/bin/bash
+
+#SBATCH -J train_one-{param1}-{param2}
+#SBATCH --output=/work/gallim/devel/CQRRelatedStudies/NormalizingFlow/training/log/one-{param1}-{param2}.out
+#SBATCH --error=/work/gallim/devel/CQRRelatedStudies/NormalizingFlow/training/log/one-{param1}-{param2}.err
+
+#SBATCH --partition=standard                                          
+#SBATCH --time=10:00:00
+#SBATCH --mem=10G
+
+cd /work/gallim/devel/CQRRelatedStudies/NormalizingFlow/training; /work/gallim/mambaforge/envs/FFFShapes/bin/python train_one.py --config-name {param1} calo={param2}

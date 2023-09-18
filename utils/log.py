@@ -18,7 +18,7 @@ def setup_logger(
     """
     logger = logging.getLogger()
     #    __name__
-    #)  # need to give it a name, otherwise *way* too much info gets printed out from e.g. numba
+    # )  # need to give it a name, otherwise *way* too much info gets printed out from e.g. numba
 
     # Set up level of information
     possible_levels = ["INFO", "DEBUG"]
@@ -50,7 +50,7 @@ def setup_logger(
         logger.addHandler(file_handler)
 
     # Silence Dask logging
-    dask_logger = logging.getLogger('distributed')
+    dask_logger = logging.getLogger("distributed")
     # Set its level to an 'impossible' level so no logs from this logger will propagate
     dask_logger.setLevel(logging.CRITICAL + 1)
 

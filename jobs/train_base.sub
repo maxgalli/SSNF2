@@ -1,0 +1,16 @@
+#! /bin/bash
+
+#SBATCH -J train-{param1}-{param2}-{param3}
+#SBATCH --output=/work/gallim/devel/CQRRelatedStudies/SSNF2/jobs/{param1}-{param2}-{param3}.out
+#SBATCH --error=/work/gallim/devel/CQRRelatedStudies/SSNF2/jobs/{param1}-{param2}-{param3}.err
+
+#SBATCH --account=gpu_gres               # to access gpu resources
+#SBATCH --partition=gpu                                           
+#SBATCH --nodes=1                        # request to run job on single node                                       
+#SBATCH --ntasks=10                      # request 10 CPU's (t3gpu01/02: balance between CPU and GPU : 5CPU/1GPU)      
+#SBATCH --gres=gpu:2                     # request  for two GPU's on machine, this is total  amount of GPUs for job        
+#SBATCH --mem=20G                        # memory (per job)
+#SBATCH --time=30:00:00
+#SBATCH --gres-flags=disable-binding    
+
+/work/gallim/mambaforge/envs/FFFShapes/bin/python /work/gallim/devel/CQRRelatedStudies/SSNF2/train_base.py --config-name {param1} sample={param2} calo={param3}

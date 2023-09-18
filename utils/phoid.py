@@ -4,7 +4,7 @@ import xgboost
 
 phoid_files = {
     "eb": "/work/gallim/devel/CQRRelatedStudies/SSNF2/preprocess/XGB_Model_Barrel_SA_phoID_UL2017_woCorr.json",
-    "ee": "/work/gallim/devel/CQRRelatedStudies/SSNF2/preprocess/XGB_Model_Endcap_SA_phoID_UL2017_woCorr.json"
+    "ee": "/work/gallim/devel/CQRRelatedStudies/SSNF2/preprocess/XGB_Model_Endcap_SA_phoID_UL2017_woCorr.json",
 }
 
 
@@ -59,7 +59,9 @@ def calculate_photonid_mva(dataframe, calo):
     photonid_mva = load_photonid_mva(phoid_files[calo])
 
     bdt_inputs = dataframe[var_order].to_numpy()
-    tempmatrix = xgboost.DMatrix(bdt_inputs, feature_names=[var.replace("probe_", "") for var in var_order])
+    tempmatrix = xgboost.DMatrix(
+        bdt_inputs, feature_names=[var.replace("probe_", "") for var in var_order]
+    )
 
     mvaID = photonid_mva.predict(tempmatrix)
 

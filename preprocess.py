@@ -7,17 +7,14 @@ from dask.distributed import LocalCluster, Client
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
-from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import PowerTransformer
 from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import QuantileTransformer
 import cloudpickle
 from copy import deepcopy
 import os
 from hep_ml import reweight
-import logging
 
-from utils.transforms import CustomLog, CustomPT, IsoTransformer, remove_outliers, replace_outliers
+from utils.transforms import CustomLog, IsoTransformer, remove_outliers
 from utils.plots import dump_main_plot, transformed_ranges
 from utils.log import setup_logger
 from utils.phoid import calculate_photonid_mva
@@ -224,10 +221,20 @@ def main():
                 data_df_train[context].values[:100000],
             )
             pickle.dump(reweighter, open(reweighter_name, "wb"))
+
+        train_weights = reweighter.predict_weights(
+            mc_df_train[context].values,
+        )
         
         test_weights = reweighter.predict_weights(
             mc_df_test[context].values,
         )
+
+        # add weights to mc dataframe and ones to data dataframe
+        mc_df_train["weight"] = train_weights
+        data_df_train["weight"] = np.ones(len(data_df_train))
+        mc_df_test["weight"] = test_weights
+        data_df_test["weight"] = np.ones(len(data_df_test))
 
         logger.info("Plot reweighted context variables")
         for col in context:
