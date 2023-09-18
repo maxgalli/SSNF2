@@ -424,7 +424,7 @@ def transform_and_plot_top(
         pho_id_mc,
         vars_config["probe_mvaID"],
         output_dir="",
-        subdetector="",
+        subdetector=calo,
         mc_corr=pho_id_mc_corr,
         weights=weights_mc,
         extra_name="_top",
@@ -476,3 +476,159 @@ def transform_and_plot_top(
 
     # close figures
     plt.close("all")
+
+    
+def plot_one(
+    mc_test_loader,
+    data_test_loader,
+    model,
+    epoch,
+    writer,
+    context_variables,
+    target_variables,
+    device,
+    pipeline,
+    calo,
+):
+    with torch.no_grad():
+        data_lst, mc_lst, mc_corr_lst = [], [], []
+        data_context_lst, mc_context_lst, mc_corr_context_lst = [], [], []
+        mc_weights_lst = []
+        data_extra_lst, mc_extr_lst = [], []
+        for (data_context, data_target, data_weights, data_extra), (mc_context, mc_target, mc_weights, mc_extra) in zip(
+            data_test_loader, mc_test_loader
+        ):
+            data_context = data_context.to(device)
+            data_target = data_target.to(device)
+            mc_context = mc_context.to(device)
+            mc_target = mc_target.to(device)
+            latent_mc = model._transform(mc_target, context=mc_context)[0]
+            # replace the last column in mc_context with 0 instead of 1
+            mc_context[:, -1] = 0
+            mc_target_corr = model._transform.inverse(latent_mc, context=mc_context)[0]
+            data_target = data_target.detach().cpu().numpy()
+            data_context = data_context.detach().cpu().numpy()
+            data_extra = data_extra.detach().cpu().numpy()
+            mc_target = mc_target.detach().cpu().numpy()
+            mc_target_corr = mc_target_corr.detach().cpu().numpy()
+            mc_context = mc_context.detach().cpu().numpy()
+            mc_extra = mc_extra.detach().cpu().numpy()
+            mc_weights = mc_weights.detach().cpu().numpy()
+            data_lst.append(data_target)
+            data_context_lst.append(data_context)
+            data_extra_lst.append(data_extra)
+            mc_lst.append(mc_target)
+            mc_corr_lst.append(mc_target_corr)
+            mc_context_lst.append(mc_context)
+            mc_weights_lst.append(mc_weights)
+            mc_extr_lst.append(mc_extra)
+    data = np.concatenate(data_lst, axis=0)
+    mc = np.concatenate(mc_lst, axis=0)
+    mc_corr = np.concatenate(mc_corr_lst, axis=0)
+    data = pd.DataFrame(data, columns=target_variables)
+    mc = pd.DataFrame(mc, columns=target_variables)
+    mc_corr = pd.DataFrame(mc_corr, columns=target_variables)
+    data_context = np.concatenate(data_context_lst, axis=0)
+    mc_context = np.concatenate(mc_context_lst, axis=0)
+    # remove the last column from mc_context
+    mc_context = mc_context[:, :-1]
+    data_context = pd.DataFrame(data_context, columns=context_variables)
+    mc_context = pd.DataFrame(mc_context, columns=context_variables)
+    mc_weights = np.concatenate(mc_weights_lst, axis=0)
+    data_extra = np.concatenate(data_extra_lst, axis=0)
+    data_extra = pd.DataFrame(data_extra, columns=["probe_energyRaw"])
+    mc_extra = np.concatenate(mc_extr_lst, axis=0)
+    mc_extra = pd.DataFrame(mc_extra, columns=["probe_energyRaw"])
+
+    for var in target_variables:
+        if device == 0 or type(device) != int:
+            dump_main_plot(
+                data[var],
+                mc[var],
+                variable_conf={
+                    "name": var,
+                    "title": var,
+                    "x_label": var,
+                    "bins": 100,
+                    "range": transformed_ranges[pipeline][var],
+                },
+                output_dir="",
+                subdetector=calo,
+                mc_corr=mc_corr[var],
+                weights=mc_weights,
+                extra_name="_one_transformed",
+                writer_epoch=(writer, epoch),
+                labels=None,
+            )
+
+    # sample back
+    pipeline = mc_test_loader.dataset.pipelines
+
+    with open(f"{script_dir}/../preprocess/var_specs.json", "r") as f:
+        vars_config = json.load(f)
+        vars_config = {d["name"]: d for d in vars_config}
+
+    for var in target_variables:
+        data[var] = (
+            pipeline[var]
+            .inverse_transform(data[var].values.reshape(-1, 1))
+            .reshape(-1)
+        )
+        mc[var] = (
+            pipeline[var]
+            .inverse_transform(mc[var].values.reshape(-1, 1))
+            .reshape(-1)
+        )
+        mc_corr[var] = (
+            pipeline[var]
+            .inverse_transform(mc_corr[var].values.reshape(-1, 1))
+            .reshape(-1)
+        )
+        if device == 0 or type(device) != int:
+            dump_main_plot(
+                data[var],
+                mc[var],
+                variable_conf=vars_config[var],
+                output_dir="",
+                subdetector=calo,
+                mc_corr=mc_corr[var],
+                weights=mc_weights,
+                extra_name="_one",
+                writer_epoch=(writer, epoch),
+                labels=None,
+            )
+
+    for var in context_variables:
+        data_context[var] = (
+            pipeline[var]
+            .inverse_transform(data_context[var].values.reshape(-1, 1))
+            .reshape(-1)
+        )
+        mc_context[var] = (
+            pipeline[var]
+            .inverse_transform(mc_context[var].values.reshape(-1, 1))
+            .reshape(-1)
+        )
+
+    # photon ID
+    # make dataframes by merging context, target and extra
+    data_df = pd.concat([data, data_context, data_extra], axis=1)
+    mc_df = pd.concat([mc, mc_context, mc_extra], axis=1)
+    mc_corr_df = pd.concat([mc_corr, mc_context, mc_extra], axis=1)
+
+    pho_id_data = calculate_photonid_mva(data_df, calo=calo)
+    pho_id_mc = calculate_photonid_mva(mc_df, calo=calo)
+    pho_id_mc_corr = calculate_photonid_mva(mc_corr_df, calo=calo)
+    
+    dump_main_plot(
+        pho_id_data,
+        pho_id_mc,
+        vars_config["probe_mvaID"],
+        output_dir="",
+        subdetector=calo,
+        mc_corr=pho_id_mc_corr,
+        weights=mc_weights,
+        extra_name="_one",
+        labels=None,
+        writer_epoch=(writer, epoch), 
+    )

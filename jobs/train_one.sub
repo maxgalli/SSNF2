@@ -1,8 +1,8 @@
 #! /bin/bash
 
 #SBATCH -J train_one-{param1}-{param2}
-#SBATCH --output=/work/gallim/devel/CQRRelatedStudies/NormalizingFlow/training/log/one-{param1}-{param2}.out
-#SBATCH --error=/work/gallim/devel/CQRRelatedStudies/NormalizingFlow/training/log/one-{param1}-{param2}.err
+#SBATCH --output=/work/gallim/devel/CQRRelatedStudies/SSNF2/jobs/one-{param1}-{param2}.out
+#SBATCH --error=/work/gallim/devel/CQRRelatedStudies/SSNF2/jobs/one-{param1}-{param2}.err
 
 #SBATCH --account=gpu_gres               # to access gpu resources
 #SBATCH --partition=gpu                                           
@@ -13,4 +13,4 @@
 #SBATCH --time=50:00:00
 #SBATCH --gres-flags=disable-binding    
 
-cd /work/gallim/devel/CQRRelatedStudies/NormalizingFlow/training; /work/gallim/mambaforge/envs/FFFShapes/bin/python train_one.py --config-name {param1} calo={param2}
+/work/gallim/mambaforge/envs/FFFShapes/bin/python train_one.py --config-name {param1} calo={param2}

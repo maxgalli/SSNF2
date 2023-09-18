@@ -13,14 +13,14 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 
-from utils.datasets import ddp_setup, ParquetDataset
+from utils.datasets import ddp_setup, ParquetDataset, ParquetDatasetOne
 from utils.custom_models import (
     create_mixture_flow_model,
     save_model,
     load_mixture_model,
     load_fff_mixture_model,
 )
-from utils.plots import sample_and_plot_base, transform_and_plot_top
+from utils.plots import sample_and_plot_base, transform_and_plot_top, plot_one
 
 
 class EarlyStopping:
@@ -628,6 +628,256 @@ def train_top(device, cfg, world_size=None, device_ids=None):
                     optimizer=optimizer,
                     is_ddp=world_size is not None,
                     # save_both=epoch % cfg.sample_every == 0,
+                )
+
+        early_stopping(epoch_train_loss)
+        if early_stopping.early_stop:
+            break
+
+    writer.close()
+
+
+def train_one(device, cfg, world_size=None, device_ids=None):
+    # device is device when not distributed and rank when distributed
+    if world_size is not None:
+        ddp_setup(device, world_size)
+
+    device_id = device_ids[device] if device_ids is not None else device
+
+    # create (and load) the model
+    input_dim = len(cfg.target_variables)
+    context_dim = len(cfg.context_variables)
+    flow_params_dct = {
+        "input_dim": input_dim,
+        "context_dim": context_dim + 1,
+        "base_kwargs": {
+            "num_steps_maf": cfg.model.maf.num_steps,
+            "num_steps_arqs": cfg.model.arqs.num_steps,
+            "num_transform_blocks_maf": cfg.model.maf.num_transform_blocks,
+            "num_transform_blocks_arqs": cfg.model.arqs.num_transform_blocks,
+            "activation": cfg.model.activation,
+            "dropout_probability_maf": cfg.model.maf.dropout_probability,
+            "dropout_probability_arqs": cfg.model.arqs.dropout_probability,
+            "use_residual_blocks_maf": cfg.model.maf.use_residual_blocks,
+            "use_residual_blocks_arqs": cfg.model.arqs.use_residual_blocks,
+            "batch_norm_maf": cfg.model.maf.batch_norm,
+            "batch_norm_arqs": cfg.model.arqs.batch_norm,
+            "num_bins_arqs": cfg.model.arqs.num_bins,
+            "tail_bound_arqs": cfg.model.arqs.tail_bound,
+            "hidden_dim_maf": cfg.model.maf.hidden_dim,
+            "hidden_dim_arqs": cfg.model.arqs.hidden_dim,
+            "init_identity": cfg.model.init_identity,
+        },
+        "transform_type": cfg.model.transform_type,
+    }
+    model = create_mixture_flow_model(**flow_params_dct).to(device)
+
+    if cfg.checkpoint is not None:
+        # assume that the checkpoint is path to a directory
+        model, _, _, start_epoch, th, _ = load_mixture_model(
+            model, model_dir=cfg.checkpoint, filename="checkpoint-latest.pt"
+        )
+        model = model.to(device)
+        best_train_loss = np.min(th)
+        logger.info("Loaded model from checkpoint: {}".format(cfg.checkpoint))
+        logger.info("Resuming from epoch {}".format(start_epoch))
+        logger.info("Best train loss found to be: {}".format(best_train_loss))
+    else:
+        start_epoch = 1
+        best_train_loss = 10000000
+
+    early_stopping = EarlyStopping(
+        patience=cfg.stopper.patience, min_delta=cfg.stopper.min_delta
+    )
+
+    if world_size is not None:
+        ddp_model = DDP(
+            model,
+            device_ids=[device],
+            output_device=device,
+            #find_unused_parameters=True,
+        )
+        model = ddp_model.module
+    else:
+        ddp_model = model
+    print("Number of parameters: ", sum(p.numel() for p in model.parameters()))
+
+    # make datasets
+    calo = cfg.calo
+
+    data_train_file = f"{script_dir}/../preprocess/data_{calo}_train.parquet"
+    data_test_file = f"{script_dir}/../preprocess/data_{calo}_test.parquet"
+    mc_train_file = f"{script_dir}/../preprocess/mc_{calo}_train.parquet"
+    mc_test_file = f"{script_dir}/../preprocess/mc_{calo}_test.parquet"
+    
+    with open(f"{script_dir}/../preprocess/pipelines_{calo}.pkl", "rb") as file:
+        pipelines = pkl.load(file)
+        pipelines = pipelines[cfg.pipelines]
+
+    train_dataset = ParquetDatasetOne(
+        mc_train_file,
+        cfg.context_variables,
+        cfg.target_variables,
+        device=device,
+        pipelines=pipelines,
+        rows=cfg.train.size,
+        data_parquet_file=data_train_file,
+    )
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=cfg.train.batch_size,
+        shuffle=False if world_size is not None else True,
+        sampler=DistributedSampler(train_dataset) if world_size is not None else None,
+    )
+    test_dataset = ParquetDatasetOne(
+        mc_test_file,
+        cfg.context_variables,
+        cfg.target_variables,
+        device=device,
+        pipelines=train_dataset.pipelines,
+        rows=cfg.test.size,
+        data_parquet_file=data_train_file,
+    )
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=cfg.test.batch_size,
+        shuffle=False,
+    )
+    mc_test_dataset = ParquetDatasetOne(
+        mc_test_file,
+        cfg.context_variables,
+        cfg.target_variables,
+        device=device,
+        pipelines=train_dataset.pipelines,
+        rows=cfg.test.size,
+    )
+    mc_test_loader = DataLoader(
+        mc_test_dataset,
+        batch_size=cfg.test.batch_size,
+        shuffle=False,
+    )
+    data_test_dataset = ParquetDataset(
+        data_test_file,
+        cfg.context_variables,
+        cfg.target_variables,
+        device=device,
+        pipelines=train_dataset.pipelines,
+        rows=cfg.test.size,
+    )
+    data_test_loader = DataLoader(
+        data_test_dataset,
+        batch_size=cfg.test.batch_size,
+        shuffle=False,
+    )
+
+    # train the model
+    writer = SummaryWriter(log_dir="runs")
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=cfg.optimizer.learning_rate,
+        betas=(cfg.optimizer.beta1, cfg.optimizer.beta2),
+        weight_decay=cfg.optimizer.weight_decay,
+    )
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, cfg.epochs)
+
+    train_history, test_history = [], []
+    for epoch in range(start_epoch, cfg.epochs + 1):
+        if world_size is not None:
+            b_sz = len(next(iter(train_loader))[0])
+            logger.info(
+                f"[GPU{device_id}] | Rank {device} | Epoch {epoch} | Batchsize: {b_sz} | Steps: {len(train_loader)}"
+            )
+            train_loader.sampler.set_epoch(epoch)
+        logger.info(f"Epoch {epoch}/{cfg.epochs}:")
+        
+        train_losses = []
+        test_losses = []
+        # train
+        start = time.time()
+        logger.info("Training...")
+        for i, (context, target, weights, _) in enumerate(train_loader):
+            #context, target = context.to(device), target.to(device)
+            model.train()
+            optimizer.zero_grad()
+            
+            log_prog, logabsdet = ddp_model(target, context=context)
+            loss = - log_prog * weights - logabsdet * weights
+            loss = loss.mean()
+            train_losses.append(loss.item())
+
+            loss.backward()
+            optimizer.step()
+            scheduler.step()
+
+        epoch_train_loss = np.mean(train_losses)
+        train_history.append(epoch_train_loss)
+
+        # test
+        logger.info("Testing...")
+        for i, (context, target, weights, _) in enumerate(test_loader):
+            #context, target = context.to(device), target.to(device)
+            with torch.no_grad():
+                model.eval()
+                log_prog, logabsdet = ddp_model(target, context=context)
+                loss = - log_prog * weights - logabsdet * weights
+                loss = loss.mean()
+                test_losses.append(loss.item())
+
+        epoch_test_loss = np.mean(test_losses)
+        test_history.append(epoch_test_loss)
+        if device == 0 or world_size is None:
+            writer.add_scalars(
+                "Losses", {"train": epoch_train_loss, "val": epoch_test_loss}, epoch
+            )
+        
+        # sample and validation
+        if epoch % cfg.sample_every == 0 or epoch == 1:
+            print("Sampling and plotting...")
+            plot_one(
+                mc_test_loader=mc_test_loader,
+                data_test_loader=data_test_loader,
+                model=model,
+                epoch=epoch,
+                writer=writer,
+                context_variables=cfg.context_variables,
+                target_variables=cfg.target_variables,
+                device=device,
+                pipeline=cfg.pipelines,
+                calo=calo,
+            )
+
+        duration = time.time() - start
+        print(
+            f"Epoch {epoch} | GPU{device_id} | Rank {device} - train loss: {epoch_train_loss:.4f} - val loss: {epoch_test_loss:.4f} - time: {duration:.2f}s"
+        )
+
+        if device == 0 or world_size is None:
+            save_model(
+                epoch,
+                ddp_model,
+                scheduler,
+                train_history,
+                test_history,
+                name="checkpoint-latest.pt",
+                model_dir=".",
+                optimizer=optimizer,
+                is_ddp=world_size is not None,
+            )
+        
+        if epoch_train_loss < best_train_loss:
+            print("New best train loss, saving model...")
+            best_train_loss = epoch_train_loss
+            if device == 0 or world_size is None:
+                save_model(
+                    epoch,
+                    ddp_model,
+                    scheduler,
+                    train_history,
+                    test_history,
+                    name="best_train_loss.pt",
+                    model_dir=".",
+                    optimizer=optimizer,
+                    is_ddp=world_size is not None,
                 )
 
         early_stopping(epoch_train_loss)
