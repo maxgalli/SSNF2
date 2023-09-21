@@ -86,6 +86,9 @@ def dump_main_plot(
     bins = variable_conf["bins"]
     range = variable_conf["range"]
 
+    if type(output_dir) == str:
+        output_dir = [output_dir]
+
     # specific ranges for EB and EE
     if name == "probe_sieie" and subdetector == "EE":
         range = [0.005, 0.04]
@@ -185,8 +188,9 @@ def dump_main_plot(
         writer, epoch = writer_epoch
         writer.add_figure(fig_name, fig, epoch)
     else:
-        for ext in ["pdf", "png"]:
-            fig.savefig(output_dir + "/" + fig_name + "." + ext, bbox_inches="tight")
+        for dr in output_dir:
+            for ext in ["pdf", "png"]:
+                fig.savefig(dr + "/" + fig_name + "." + ext, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -482,6 +486,7 @@ def plot_one(
     mc_test_loader,
     data_test_loader,
     model,
+    model_name,
     epoch,
     writer,
     context_variables,
@@ -502,10 +507,16 @@ def plot_one(
             data_target = data_target.to(device)
             mc_context = mc_context.to(device)
             mc_target = mc_target.to(device)
-            latent_mc = model._transform(mc_target, context=mc_context)[0]
+            if "zuko" in model_name:
+                latent_mc = model(mc_context).transform(mc_target)
+            else:
+                latent_mc = model._transform(mc_target, context=mc_context)[0]
             # replace the last column in mc_context with 0 instead of 1
             mc_context[:, -1] = 0
-            mc_target_corr = model._transform.inverse(latent_mc, context=mc_context)[0]
+            if "zuko" in model_name:
+                mc_target_corr = model(mc_context).transform.inv(latent_mc)
+            else:
+                mc_target_corr = model._transform.inverse(latent_mc, context=mc_context)[0]
             data_target = data_target.detach().cpu().numpy()
             data_context = data_context.detach().cpu().numpy()
             data_extra = data_extra.detach().cpu().numpy()

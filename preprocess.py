@@ -1,3 +1,4 @@
+import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 import json
@@ -13,11 +14,32 @@ import cloudpickle
 from copy import deepcopy
 import os
 from hep_ml import reweight
+import logging
+
+logger = logging.getLogger(__name__)
 
 from utils.transforms import CustomLog, IsoTransformer, remove_outliers
 from utils.plots import dump_main_plot, transformed_ranges
 from utils.log import setup_logger
 from utils.phoid import calculate_photonid_mva
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="")
+
+    parser.add_argument(
+        "--data-file-pattern",
+        type=str,
+        default="../NormalizingFlow/samples/data/DoubleEG/nominal/*.parquet",
+    )
+    parser.add_argument(
+        "--mc-uncorr-file-pattern",
+        type=str,
+        default="../NormalizingFlow/samples/mc_uncorr/DYJetsToLL_M-50_TuneCP5_13TeV-amcatnloFXFX-pythia8/nominal/*.parquet",
+    )
+    parser.add_argument("--extra-output-dir", type=str, default=None)
+
+    return parser.parse_args()
 
 
 # More than one pipeline defined since we don't know yet if the first one will be the best
@@ -109,29 +131,62 @@ pipelines = {
             ]
         ),
         # Others
-        "probe_energyRaw": Pipeline(
-            [
-                ("none", None)
-            ]
-        ),
+        "probe_energyRaw": Pipeline([("none", None)]),
     },
 }
 
 
-def main():
+def invariant_mass(pt1, eta1, phi1, pt2, eta2, phi2):
+    return np.sqrt(2 * pt1 * pt2 * (np.cosh(eta1 - eta2) - np.cos(phi1 - phi2)))
+
+
+def apply_extra_selections(df):
+    initial_len = len(df)
+    mass = invariant_mass(
+        df["tag_pt"],
+        df["tag_eta"],
+        df["tag_phi"],
+        df["probe_pt"],
+        df["probe_eta"],
+        df["probe_phi"],
+    )
+    # 80 < mass < 100
+    df = df[(mass > 80) & (mass < 100)]
+    final_len = len(df)
+    logger.info(
+        f"Fraction of events removed by mass selection: {(initial_len - final_len) / initial_len}"
+    )
+    # tag_r9  > 0.8
+    df = df[df["tag_r9"] > 0.8]
+    very_final_len = len(df)
+    logger.info(
+        f"Fraction of events removed by tag_r9 selection: {(final_len - very_final_len) / final_len}"
+    )
+    return df
+
+
+def main(args):
     logger = setup_logger(level="INFO")
 
     output_dir = "./preprocess"
     fig_output_dir = "./preprocess/figures"
+    fig_output_dirs = []
     # create directory if it doesn't exist
     if not os.path.exists(fig_output_dir):
         os.makedirs(fig_output_dir)
+    fig_output_dirs.append(fig_output_dir)
+    if args.extra_output_dir is not None:
+        extra_output_dir = "{}/preprocess".format(args.extra_output_dir)
+        if not os.path.exists(extra_output_dir):
+            os.makedirs(extra_output_dir)
+        fig_output_dirs.append(extra_output_dir)
 
     with open("./preprocess/var_specs.json", "r") as f:
         vars_config = json.load(f)
         # turn into a dict with name as key
         vars_config = {d["name"]: d for d in vars_config}
 
+    tag_kinematics = ["tag_pt", "tag_eta", "tag_phi", "tag_r9"]
     context = ["probe_pt", "probe_eta", "probe_phi", "probe_fixedGridRhoAll"]
     shower_shapes = [
         "probe_r9",
@@ -148,18 +203,30 @@ def main():
     ]
     others = ["probe_energyRaw"]
     columns = context + shower_shapes + isolation + others
+    columns_with_tag = tag_kinematics + columns
 
     # start a local cluster for parallel processing
     cluster = LocalCluster()
     client = Client(cluster)
 
-    data_file_pattern = "/work/gallim/devel/CQRRelatedStudies/NormalizingFlow/samples/data/DoubleEG/nominal/*.parquet"
-    mc_uncorr_file_pattern = "/work/gallim/devel/CQRRelatedStudies/NormalizingFlow/samples/mc_uncorr/DYJetsToLL_M-50_TuneCP5_13TeV-amcatnloFXFX-pythia8/nominal/*.parquet"
+    data_file_pattern = args.data_file_pattern
+    mc_uncorr_file_pattern = args.mc_uncorr_file_pattern
 
-    data_df = dd.read_parquet(data_file_pattern, columns=columns, engine="fastparquet")
-    mc_uncorr_df = dd.read_parquet(
-        mc_uncorr_file_pattern, columns=columns, engine="fastparquet"
+    data_df = dd.read_parquet(
+        data_file_pattern, columns=columns_with_tag, engine="fastparquet"
     )
+    mc_uncorr_df = dd.read_parquet(
+        mc_uncorr_file_pattern, columns=columns_with_tag, engine="fastparquet"
+    )
+
+    # apply extra selections
+    logger.info("Apply extra selections")
+    data_df = apply_extra_selections(data_df)
+    mc_uncorr_df = apply_extra_selections(mc_uncorr_df)
+
+    # keep only the columns we need
+    data_df = data_df[columns]
+    mc_uncorr_df = mc_uncorr_df[columns]
 
     logger.info("Reading data...")
     data_df = data_df.compute()
@@ -175,7 +242,7 @@ def main():
         "eb": [data_df_eb, mc_uncorr_df_eb],
         "ee": [data_df_ee, mc_uncorr_df_ee],
     }
-    #for calo in ["eb", "ee"]:
+    # for calo in ["eb", "ee"]:
     for calo in ["eb"]:
         data_df, mc_df = dataframes[calo]
 
@@ -195,7 +262,7 @@ def main():
                 data_df_test[col].values,
                 mc_df_test[col].values,
                 vars_config[col],
-                fig_output_dir,
+                fig_output_dirs,
                 calo,
                 mc_corr=None,
                 weights=None,
@@ -208,7 +275,9 @@ def main():
             logger.info("Load reweighter from {}".format(reweighter_name))
             reweighter = pickle.load(open(reweighter_name, "rb"))
         else:
-            logger.warning("Train reweighter as {} does not exist".format(reweighter_name))
+            logger.warning(
+                "Train reweighter as {} does not exist".format(reweighter_name)
+            )
             reweighter = reweight.GBReweighter(
                 n_estimators=250,
                 learning_rate=0.1,
@@ -225,7 +294,7 @@ def main():
         train_weights = reweighter.predict_weights(
             mc_df_train[context].values,
         )
-        
+
         test_weights = reweighter.predict_weights(
             mc_df_test[context].values,
         )
@@ -242,7 +311,7 @@ def main():
                 data_df_test[col].values,
                 mc_df_test[col].values,
                 vars_config[col],
-                fig_output_dir,
+                fig_output_dirs,
                 calo,
                 mc_corr=None,
                 weights=test_weights,
@@ -258,11 +327,15 @@ def main():
         # save
         logger.info("Save dataframes")
         for ext, df_ in zip(["train", "test"], [data_df_train, data_df_test]):
-            df_.to_parquet(f"{output_dir}/data_{calo}_{ext}.parquet", engine="fastparquet")
+            df_.to_parquet(
+                f"{output_dir}/data_{calo}_{ext}.parquet", engine="fastparquet"
+            )
         for ext, df_ in zip(["train", "test"], [mc_df_train, mc_df_test]):
-            df_.to_parquet(f"{output_dir}/mc_{calo}_{ext}.parquet", engine="fastparquet")
-   
-        for version in pipelines.keys(): 
+            df_.to_parquet(
+                f"{output_dir}/mc_{calo}_{ext}.parquet", engine="fastparquet"
+            )
+
+        for version in pipelines.keys():
             logger.info(f"Transform data with pipeline {version}")
             dct = pipelines[version]
 
@@ -284,11 +357,45 @@ def main():
                     transformed_data_test_arr,
                     transformed_mc_test_arr,
                     local_var_config,
-                    fig_output_dir,
+                    fig_output_dirs,
                     calo,
                     mc_corr=None,
                     weights=test_weights,
                     extra_name=f"_{version}_test_transformed",
+                )
+
+                # two plots with sampled back
+                # data
+                logger.info("Plot data transformed back")
+                transformed_back_data_test_arr = pipe.inverse_transform(
+                    transformed_data_test_arr
+                )
+                dump_main_plot(
+                    data_test_arr,
+                    transformed_back_data_test_arr,
+                    vars_config[var],
+                    fig_output_dirs,
+                    calo,
+                    mc_corr=None,
+                    weights=None,
+                    extra_name=f"_{version}_test_transformed_back_data",
+                    labels=["Data", "Data transformed back"],
+                )
+                # mc
+                logger.info("Plot mc transformed back")
+                transformed_back_mc_test_arr = pipe.inverse_transform(
+                    transformed_mc_test_arr
+                )
+                dump_main_plot(
+                    mc_test_arr,
+                    transformed_back_mc_test_arr,
+                    vars_config[var],
+                    fig_output_dirs,
+                    calo,
+                    mc_corr=None,
+                    weights=None,
+                    extra_name=f"_{version}_test_transformed_back_mc",
+                    labels=["MC", "MC transformed back"],
                 )
 
             # save pipelines
@@ -301,12 +408,12 @@ def main():
         logger.info("Calculate photon ID MVA")
         pho_id_data_test = calculate_photonid_mva(data_df_test, calo)
         pho_id_mc_test = calculate_photonid_mva(mc_df_test, calo)
-        
+
         dump_main_plot(
             pho_id_data_test,
             pho_id_mc_test,
             vars_config["probe_mvaID"],
-            fig_output_dir,
+            fig_output_dirs,
             calo,
             mc_corr=None,
             weights=test_weights,
@@ -315,4 +422,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_arguments()
+    main(args)

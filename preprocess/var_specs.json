@@ -15,7 +15,7 @@
         "x_label": "MVA ID",
         "bins": 50,
         "range": [
-            0,
+            -0.8,
             1
         ]
     },
