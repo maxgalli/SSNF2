@@ -31,6 +31,22 @@ transformed_ranges = {
         "probe_pfChargedIsoPFPV": [-4, 3],
         "probe_pfChargedIsoWorstVtx": [-3, 6],
         "probe_energyRaw": [0, 300],
+    },
+    "pipe1": {
+        "probe_pt": [-4, 4],
+        "probe_eta": [-2, 2],
+        "probe_phi": [-2, 2],
+        "probe_fixedGridRhoAll": [-3, 5],
+        "probe_r9": [-2, 2],
+        "probe_s4": [-2, 3],
+        "probe_sieie": [-6, 6],
+        "probe_sieip": [-6, 6],
+        "probe_etaWidth": [-3, 5],
+        "probe_phiWidth": [-3, 3],
+        "probe_pfPhoIso03": [-3, 3],
+        "probe_pfChargedIsoPFPV": [-2, 3.5],
+        "probe_pfChargedIsoWorstVtx": [-5, 6],
+        "probe_energyRaw": [0, 300],
     }
 }
 
@@ -180,6 +196,7 @@ def dump_main_plot(
     down.set_yticks(y_minor_ticks, minor=True)
     down.grid(True, alpha=0.4, which="minor")
     up.legend()
+    # if probe_pt log scale
     hep.cms.label(
         loc=0, data=True, llabel="Work in Progress", rlabel="", ax=up, pad=0.05
     )

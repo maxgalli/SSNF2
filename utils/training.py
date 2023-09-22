@@ -770,29 +770,29 @@ def train_one(device, cfg, world_size=None, device_ids=None):
         batch_size=cfg.test.batch_size,
         shuffle=False,
     )
-    mc_test_dataset = ParquetDatasetOne(
-        mc_test_file,
-        cfg.context_variables,
-        cfg.target_variables,
-        device=device,
-        pipelines=train_dataset.pipelines,
-        rows=cfg.test.size,
-    )
-    mc_test_loader = DataLoader(
-        mc_test_dataset,
-        batch_size=cfg.test.batch_size,
-        shuffle=False,
-    )
     data_test_dataset = ParquetDataset(
         data_test_file,
         cfg.context_variables,
         cfg.target_variables,
         device=device,
         pipelines=train_dataset.pipelines,
-        rows=cfg.test.size,
+        #rows=cfg.test.size,
     )
     data_test_loader = DataLoader(
         data_test_dataset,
+        batch_size=cfg.test.batch_size,
+        shuffle=False,
+    )
+    mc_test_dataset = ParquetDatasetOne(
+        mc_test_file,
+        cfg.context_variables,
+        cfg.target_variables,
+        device=device,
+        pipelines=train_dataset.pipelines,
+        rows=len(data_test_dataset)
+    )
+    mc_test_loader = DataLoader(
+        mc_test_dataset,
         batch_size=cfg.test.batch_size,
         shuffle=False,
     )

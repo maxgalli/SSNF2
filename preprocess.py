@@ -18,7 +18,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from utils.transforms import CustomLog, IsoTransformer, remove_outliers
+from utils.transforms import CustomLog, IsoTransformer, IsoTransformerLNorm, remove_outliers
 from utils.plots import dump_main_plot, transformed_ranges
 from utils.log import setup_logger
 from utils.phoid import calculate_photonid_mva
@@ -127,6 +127,92 @@ pipelines = {
             [
                 ("sampler", IsoTransformer(0.1)),
                 ("custom_log", CustomLog()),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        # Others
+        "probe_energyRaw": Pipeline([("none", None)]),
+    },
+    "pipe1": {
+        # Context
+        "probe_pt": Pipeline(
+            [
+                ("box_cox", PowerTransformer(method="box-cox")),
+            ]
+        ),
+        "probe_eta": Pipeline(
+            [
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_phi": Pipeline(
+            [
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_fixedGridRhoAll": Pipeline(
+            [
+                ("standard", StandardScaler()),
+            ]
+        ),
+        # Shower shapes
+        "probe_r9": Pipeline(
+            [
+                ("johnson", PowerTransformer(method="yeo-johnson")),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_s4": Pipeline(
+            [
+                ("johnson", PowerTransformer(method="yeo-johnson")),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_sieie": Pipeline(
+            [
+                ("box_cox", PowerTransformer(method="box-cox")),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_sieip": Pipeline(
+            [
+                ("log", FunctionTransformer(np.log1p, np.expm1)),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_etaWidth": Pipeline(
+            [
+                (
+                    "arctan_trans",
+                    FunctionTransformer(
+                        lambda x: np.arctan(x * 100 - 0.15),
+                        inverse_func=lambda x: (np.tan(x) + 0.15) / 100,
+                    ),
+                ),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_phiWidth": Pipeline(
+            [
+                ("log", FunctionTransformer(np.log, np.exp)),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_pfPhoIso03": Pipeline(
+            [
+                ("sampler", IsoTransformerLNorm()),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_pfChargedIsoPFPV": Pipeline(
+            [
+                ("sampler", IsoTransformerLNorm()),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_pfChargedIsoWorstVtx": Pipeline(
+            [
+                ("sampler", IsoTransformerLNorm()),
                 ("standard", StandardScaler()),
             ]
         ),
@@ -279,15 +365,16 @@ def main(args):
                 "Train reweighter as {} does not exist".format(reweighter_name)
             )
             reweighter = reweight.GBReweighter(
-                n_estimators=250,
+                n_estimators=300,
                 learning_rate=0.1,
-                max_depth=3,
+                max_depth=4,
                 min_samples_leaf=1000,
                 gb_args={"subsample": 0.4},
             )
+            #reweighter = reweight.BinsReweighter(n_bins=40, n_neighs=3.)
             reweighter.fit(
-                mc_df_train[context].values[:100000],
-                data_df_train[context].values[:100000],
+                mc_df_train[context].values[:200000],
+                data_df_train[context].values[:200000],
             )
             pickle.dump(reweighter, open(reweighter_name, "wb"))
 
@@ -343,13 +430,13 @@ def main(args):
             for var, pipe in dct.items():
                 data_arr = data_df[var].values
                 mc_arr = mc_df[var].values
-                transformed_data_arr = pipe.fit_transform(data_arr.reshape(-1, 1))
-                transformed_mc_arr = pipe.transform(mc_arr.reshape(-1, 1))
+                #transformed_data_arr = pipe.fit_transform(data_arr.reshape(-1, 1))
+                #transformed_mc_arr = pipe.transform(mc_arr.reshape(-1, 1))
 
                 # now plot for test dataframes
                 data_test_arr = data_df_test[var].values
                 mc_test_arr = mc_df_test[var].values
-                transformed_data_test_arr = pipe.transform(data_test_arr.reshape(-1, 1))
+                transformed_data_test_arr = pipe.fit_transform(data_test_arr.reshape(-1, 1))
                 transformed_mc_test_arr = pipe.transform(mc_test_arr.reshape(-1, 1))
                 local_var_config = deepcopy(vars_config[var])
                 local_var_config["range"] = transformed_ranges[version][var]

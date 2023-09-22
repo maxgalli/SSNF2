@@ -73,6 +73,7 @@ class IsoTransformer(TransformerMixin, BaseEstimator):
         return X
 
     def inverse_transform(self, X, y=None):
+        X = X.copy()
         # set all values <= 0 to 0
         X[X <= 0.0] = 0.0
         return X
@@ -121,4 +122,32 @@ class CustomPT(TransformerMixin, BaseEstimator):
         greater_than_zero = np.where(X > 0)[0]
         X[greater_than_zero] += self.min_value
         X[greater_than_zero] = self.potr.inverse_transform(X[greater_than_zero])
+        return X
+
+
+class IsoTransformerLNorm(TransformerMixin, BaseEstimator):
+    def __init__(self):
+        pass
+    
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X, y=None):
+        X = X.copy()
+        zero_indices = np.where(X <= 0)[0]
+        nonzero_indices = np.where(X > 0)[0]
+        # replace 0s with values sampled from triangular distribution
+        X[zero_indices] = -np.random.lognormal(mean=0.0001, sigma=0.1, size=len(zero_indices)).reshape(-1, 1)
+        # shift the rest
+        X[nonzero_indices] = np.log1p(X[nonzero_indices])
+        return X
+        
+    def inverse_transform(self, X, y=None):
+        X = X.copy()
+        zero_indices = np.where(X <= 0)[0]
+        nonzero_indices = np.where(X > 0)[0]
+        # expm1 the rest
+        X[nonzero_indices] = np.expm1(X[nonzero_indices])
+        # replace values less than 0 with 0
+        X[zero_indices] = 0.
         return X
