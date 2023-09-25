@@ -214,6 +214,7 @@ def dump_main_plot(
 def sample_and_plot_base(
     test_loader,
     model,
+    model_name,
     epoch,
     writer,
     context_variables,
@@ -228,7 +229,10 @@ def sample_and_plot_base(
         for context, target, weights, extra in test_loader:
             context = context.to(device)
             target = target.to(device)
-            sample = model.sample(num_samples=1, context=context)
+            if "zuko" in model_name:
+                sample = model(context).sample()
+            else:
+                sample = model.sample(num_samples=1, context=context)
             context = context.detach().cpu().numpy()
             target = target.detach().cpu().numpy()
             sample = sample.detach().cpu().numpy()

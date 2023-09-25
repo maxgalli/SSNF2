@@ -57,30 +57,54 @@ def train_base(device, cfg, world_size=None, device_ids=None):
     # create (and load) the model
     input_dim = len(cfg.target_variables)
     context_dim = len(cfg.context_variables)
-    flow_params_dct = {
-        "input_dim": input_dim,
-        "context_dim": context_dim,
-        "base_kwargs": {
-            "num_steps_maf": cfg.model.maf.num_steps,
-            "num_steps_arqs": cfg.model.arqs.num_steps,
-            "num_transform_blocks_maf": cfg.model.maf.num_transform_blocks,
-            "num_transform_blocks_arqs": cfg.model.arqs.num_transform_blocks,
-            "activation": cfg.model.activation,
-            "dropout_probability_maf": cfg.model.maf.dropout_probability,
-            "dropout_probability_arqs": cfg.model.arqs.dropout_probability,
-            "use_residual_blocks_maf": cfg.model.maf.use_residual_blocks,
-            "use_residual_blocks_arqs": cfg.model.arqs.use_residual_blocks,
-            "batch_norm_maf": cfg.model.maf.batch_norm,
-            "batch_norm_arqs": cfg.model.arqs.batch_norm,
-            "num_bins_arqs": cfg.model.arqs.num_bins,
-            "tail_bound_arqs": cfg.model.arqs.tail_bound,
-            "hidden_dim_maf": cfg.model.maf.hidden_dim,
-            "hidden_dim_arqs": cfg.model.arqs.hidden_dim,
-            "init_identity": cfg.model.init_identity,
-        },
-        "transform_type": cfg.model.transform_type,
-    }
-    model = create_mixture_flow_model(**flow_params_dct).to(device)
+    if cfg.model.name == "mixture":
+        flow_params_dct = {
+            "input_dim": input_dim,
+            "context_dim": context_dim,
+            "base_kwargs": {
+                "num_steps_maf": cfg.model.maf.num_steps,
+                "num_steps_arqs": cfg.model.arqs.num_steps,
+                "num_transform_blocks_maf": cfg.model.maf.num_transform_blocks,
+                "num_transform_blocks_arqs": cfg.model.arqs.num_transform_blocks,
+                "activation": cfg.model.activation,
+                "dropout_probability_maf": cfg.model.maf.dropout_probability,
+                "dropout_probability_arqs": cfg.model.arqs.dropout_probability,
+                "use_residual_blocks_maf": cfg.model.maf.use_residual_blocks,
+                "use_residual_blocks_arqs": cfg.model.arqs.use_residual_blocks,
+                "batch_norm_maf": cfg.model.maf.batch_norm,
+                "batch_norm_arqs": cfg.model.arqs.batch_norm,
+                "num_bins_arqs": cfg.model.arqs.num_bins,
+                "tail_bound_arqs": cfg.model.arqs.tail_bound,
+                "hidden_dim_maf": cfg.model.maf.hidden_dim,
+                "hidden_dim_arqs": cfg.model.arqs.hidden_dim,
+                "init_identity": cfg.model.init_identity,
+            },
+            "transform_type": cfg.model.transform_type,
+        }
+        model = create_mixture_flow_model(**flow_params_dct)
+
+    elif cfg.model.name == "splines":
+        model = get_conditional_base_flow(
+            input_dim=input_dim,
+            context_dim=context_dim,
+            nstack=cfg.model.nstack,
+            nnodes=cfg.model.nnodes,
+            nblocks=cfg.model.nblocks,
+            tail_bound=cfg.model.tail_bound,
+            nbins=cfg.model.nbins,
+            activation=cfg.model.activation,
+            dropout_probability=cfg.model.dropout_probability,
+        )
+    
+    elif cfg.model.name == "zuko_nsf":
+        model = get_zuko_nsf(
+            input_dim=input_dim,
+            context_dim=context_dim,
+            ntransforms=cfg.model.ntransforms,
+            nbins=cfg.model.nbins,
+            nnodes=cfg.model.nnodes,
+            nlayers=cfg.model.nlayers,
+        )
 
     if cfg.checkpoint is not None:
         # assume that the checkpoint is path to a directory
@@ -95,6 +119,8 @@ def train_base(device, cfg, world_size=None, device_ids=None):
     else:
         start_epoch = 1
         best_train_loss = 10000000
+
+    model = model.to(device)
 
     early_stopping = EarlyStopping(
         patience=cfg.stopper.patience, min_delta=cfg.stopper.min_delta
@@ -194,13 +220,20 @@ def train_base(device, cfg, world_size=None, device_ids=None):
         # train
         start = time.time()
         logger.info("Training...")
-        for i, (context, target, weights, _) in enumerate(train_loader):
+        for context, target, weights, _ in train_loader:
             # context, target = context.to(device), target.to(device)
             model.train()
             optimizer.zero_grad()
 
-            log_prog, logabsdet = ddp_model(target, context=context)
-            loss = weights * (-log_prog - logabsdet)
+            if cfg.model.name == "mixture":
+                log_prog, logabsdet = ddp_model(target, context=context)
+                loss = weights * (-log_prog - logabsdet)
+            elif cfg.model.name == "splines":
+                loss = ddp_model(target, context=context)
+                loss = weights * loss
+            elif "zuko" in cfg.model.name:
+                loss = -ddp_model(context).log_prob(target)
+                loss = weights * loss
             loss = loss.mean()
             train_losses.append(loss.item())
 
@@ -213,12 +246,19 @@ def train_base(device, cfg, world_size=None, device_ids=None):
 
         # test
         logger.info("Testing...")
-        for i, (context, target, weights, _) in enumerate(test_loader):
+        for context, target, weights, _ in test_loader:
             # context, target = context.to(device), target.to(device)
             with torch.no_grad():
                 model.eval()
-                log_prog, logabsdet = ddp_model(target, context=context)
-                loss = -log_prog - logabsdet
+                if cfg.model.name == "mixture":
+                    log_prog, logabsdet = ddp_model(target, context=context)
+                    loss = weights * (-log_prog - logabsdet)
+                elif cfg.model.name == "splines":
+                    loss = ddp_model(target, context=context)
+                    loss = weights * loss
+                elif "zuko" in cfg.model.name:
+                    loss = -ddp_model(context).log_prob(target)
+                    loss = weights * loss
                 loss = loss.mean()
                 test_losses.append(loss.item())
 
@@ -235,6 +275,7 @@ def train_base(device, cfg, world_size=None, device_ids=None):
             sample_and_plot_base(
                 test_loader=test_loader,
                 model=model,
+                model_name=cfg.model.name,
                 epoch=epoch,
                 writer=writer,
                 context_variables=cfg.context_variables,
@@ -893,35 +934,33 @@ def train_one(device, cfg, world_size=None, device_ids=None):
         )
 
         if device == 0 or world_size is None:
-            if cfg.model.name == "mixture":
+            save_model(
+                epoch,
+                ddp_model,
+                scheduler,
+                train_history,
+                test_history,
+                name="checkpoint-latest.pt",
+                model_dir=".",
+                optimizer=optimizer,
+                is_ddp=world_size is not None,
+            )
+        
+        if epoch_train_loss < best_train_loss:
+            print("New best train loss, saving model...")
+            best_train_loss = epoch_train_loss
+            if device == 0 or world_size is None:
                 save_model(
                     epoch,
                     ddp_model,
                     scheduler,
                     train_history,
                     test_history,
-                    name="checkpoint-latest.pt",
+                    name="best_train_loss.pt",
                     model_dir=".",
                     optimizer=optimizer,
                     is_ddp=world_size is not None,
                 )
-        
-        if epoch_train_loss < best_train_loss:
-            print("New best train loss, saving model...")
-            best_train_loss = epoch_train_loss
-            if device == 0 or world_size is None:
-                if cfg.model.name == "mixture":
-                    save_model(
-                        epoch,
-                        ddp_model,
-                        scheduler,
-                        train_history,
-                        test_history,
-                        name="best_train_loss.pt",
-                        model_dir=".",
-                        optimizer=optimizer,
-                        is_ddp=world_size is not None,
-                    )
 
         early_stopping(epoch_train_loss)
         if early_stopping.early_stop:
