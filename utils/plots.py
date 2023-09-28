@@ -31,6 +31,22 @@ transformed_ranges = {
         "probe_pfChargedIsoPFPV": [-4, 3],
         "probe_pfChargedIsoWorstVtx": [-3, 6],
         "probe_energyRaw": [0, 300],
+    },
+    "pipe1": {
+        "probe_pt": [-4, 4],
+        "probe_eta": [-2, 2],
+        "probe_phi": [-2, 2],
+        "probe_fixedGridRhoAll": [-3, 5],
+        "probe_r9": [-2, 2],
+        "probe_s4": [-2, 3],
+        "probe_sieie": [-6, 6],
+        "probe_sieip": [-6, 6],
+        "probe_etaWidth": [-3, 5],
+        "probe_phiWidth": [-3, 3],
+        "probe_pfPhoIso03": [-3, 3],
+        "probe_pfChargedIsoPFPV": [-2, 3.5],
+        "probe_pfChargedIsoWorstVtx": [-5, 6],
+        "probe_energyRaw": [0, 300],
     }
 }
 
@@ -85,6 +101,9 @@ def dump_main_plot(
     x_label = variable_conf["x_label"]
     bins = variable_conf["bins"]
     range = variable_conf["range"]
+
+    if type(output_dir) == str:
+        output_dir = [output_dir]
 
     # specific ranges for EB and EE
     if name == "probe_sieie" and subdetector == "EE":
@@ -177,6 +196,7 @@ def dump_main_plot(
     down.set_yticks(y_minor_ticks, minor=True)
     down.grid(True, alpha=0.4, which="minor")
     up.legend()
+    # if probe_pt log scale
     hep.cms.label(
         loc=0, data=True, llabel="Work in Progress", rlabel="", ax=up, pad=0.05
     )
@@ -185,14 +205,16 @@ def dump_main_plot(
         writer, epoch = writer_epoch
         writer.add_figure(fig_name, fig, epoch)
     else:
-        for ext in ["pdf", "png"]:
-            fig.savefig(output_dir + "/" + fig_name + "." + ext, bbox_inches="tight")
+        for dr in output_dir:
+            for ext in ["pdf", "png"]:
+                fig.savefig(dr + "/" + fig_name + "." + ext, bbox_inches="tight")
     plt.close(fig)
 
 
 def sample_and_plot_base(
     test_loader,
     model,
+    model_name,
     epoch,
     writer,
     context_variables,
@@ -207,7 +229,10 @@ def sample_and_plot_base(
         for context, target, weights, extra in test_loader:
             context = context.to(device)
             target = target.to(device)
-            sample = model.sample(num_samples=1, context=context)
+            if "zuko" in model_name:
+                sample = model(context).sample()
+            else:
+                sample = model.sample(num_samples=1, context=context)
             context = context.detach().cpu().numpy()
             target = target.detach().cpu().numpy()
             sample = sample.detach().cpu().numpy()
@@ -482,6 +507,7 @@ def plot_one(
     mc_test_loader,
     data_test_loader,
     model,
+    model_name,
     epoch,
     writer,
     context_variables,
@@ -502,10 +528,16 @@ def plot_one(
             data_target = data_target.to(device)
             mc_context = mc_context.to(device)
             mc_target = mc_target.to(device)
-            latent_mc = model._transform(mc_target, context=mc_context)[0]
+            if "zuko" in model_name:
+                latent_mc = model(mc_context).transform(mc_target)
+            else:
+                latent_mc = model._transform(mc_target, context=mc_context)[0]
             # replace the last column in mc_context with 0 instead of 1
             mc_context[:, -1] = 0
-            mc_target_corr = model._transform.inverse(latent_mc, context=mc_context)[0]
+            if "zuko" in model_name:
+                mc_target_corr = model(mc_context).transform.inv(latent_mc)
+            else:
+                mc_target_corr = model._transform.inverse(latent_mc, context=mc_context)[0]
             data_target = data_target.detach().cpu().numpy()
             data_context = data_context.detach().cpu().numpy()
             data_extra = data_extra.detach().cpu().numpy()
