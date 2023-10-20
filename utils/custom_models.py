@@ -11,23 +11,12 @@ import nflows.utils.typechecks as check
 from nflows.transforms.base import InputOutsideDomain
 from nflows.transforms import made as made_module
 
-from ffflows import distance_penalties
-from ffflows.distance_penalties import AnnealedPenalty
 from ffflows.distance_penalties import BasePenalty
 
 from inspect import signature
 
+from .models import get_conditional_base_flow, get_zuko_nsf, set_penalty
 
-def set_penalty(f4flow, penalty, weight, anneal=False):
-    if penalty not in ["None", None]:
-        if penalty == "l1":
-            penalty_constr = distance_penalties.LOnePenalty
-        elif penalty == "l2":
-            penalty_constr = distance_penalties.LTwoPenalty
-        penalty = penalty_constr(weight)
-        if anneal:
-            penalty = AnnealedPenalty(penalty)
-        f4flow.add_penalty(penalty)
 
 
 class NoMeanException(Exception):
@@ -759,11 +748,17 @@ def save_model(
     torch.save(dict, p / filename)
 
 
-def load_mixture_model(device, model_dir=None, filename=None):
+def load_model(device, model_dir=None, filename=None, which="mixture"):
     """Load a saved model.
     Args:
         filename:       File name
     """
+    if which == "mixture":
+        create_function = create_mixture_flow_model
+    elif which == "zuko_nsf":
+        create_function = get_zuko_nsf
+    else:
+        raise ValueError("which must be either mixture or zuko")
 
     if model_dir is None:
         raise NameError(
@@ -788,7 +783,7 @@ def load_mixture_model(device, model_dir=None, filename=None):
     test_history = checkpoint["test_history"]
 
     # Load model
-    model = create_mixture_flow_model(**model_hyperparams)
+    model = create_function(**model_hyperparams)
     model.load_state_dict(checkpoint["model_state_dict"])
     # model.to(device)
 

@@ -1,11 +1,27 @@
 from nflows.flows.base import Flow
 from nflows.distributions import ConditionalDiagonalNormal
 from nflows import transforms
+from ffflows.distance_penalties import BasePenalty
+from ffflows.distance_penalties import AnnealedPenalty
+from ffflows import distance_penalties
 
+import zuko
 from zuko.flows import NSF
 
 import torch.nn as nn
 import torch.nn.functional as F
+
+
+def set_penalty(f4flow, penalty, weight, anneal=False):
+    if penalty not in ["None", None]:
+        if penalty == "l1":
+            penalty_constr = distance_penalties.LOnePenalty
+        elif penalty == "l2":
+            penalty_constr = distance_penalties.LTwoPenalty
+        penalty = penalty_constr(weight)
+        if anneal:
+            penalty = AnnealedPenalty(penalty)
+        f4flow.add_penalty(penalty)
 
 
 def spline_inn(
@@ -100,14 +116,31 @@ def get_zuko_nsf(
     nbins,
     nnodes,
     nlayers,
+    mc_flow=None,
+    data_flow=None,
+    penalty=None,
 ):
-    flow = NSF(
-        features=input_dim,
-        context=context_dim,
-        transforms=ntransforms,
-        bins=nbins,
-        hidden_features=[nnodes] * nlayers,
-    )
+    if data_flow is None and mc_flow is None and penalty is None:
+        flow = NSF(
+            features=input_dim,
+            context=context_dim,
+            transforms=ntransforms,
+            bins=nbins,
+            hidden_features=[nnodes] * nlayers,
+        )
+    else:
+        flow = FFFZuko(
+            NSF(
+                features=input_dim,
+                context=context_dim,
+                transforms=ntransforms,
+                bins=nbins,
+                hidden_features=[nnodes] * nlayers,
+            ),
+            mc_flow,
+            data_flow,
+        )
+        set_penalty(flow, penalty["penalty_type"], penalty["penalty_weight"], penalty["anneal"])
 
     flow.model_hyperparams = {
         "input_dim": input_dim,
@@ -119,3 +152,44 @@ def get_zuko_nsf(
     }
 
     return flow
+
+    
+class FFFZuko(zuko.flows.core.Flow):
+    def __init__(self, transform, flow_mc, flow_data):
+        super().__init__(transform.transforms, transform.base)
+        self._transform = transform
+        self.flow_mc = flow_mc
+        self.flow_data = flow_data
+
+    def add_penalty(self, penalty_object):
+        """Add a distance penaly object to the class."""
+        assert isinstance(penalty_object, BasePenalty)
+        self.distance_object = penalty_object
+
+    def base_flow_log_prob(
+        self, inputs, context, inverse=False
+    ):
+        if inverse:
+            fnc = self.flow_mc(context).log_prob
+        else:
+            fnc = self.flow_data(context).log_prob
+        logprob = fnc(inputs)
+        return logprob
+
+    def transform(self, inputs, context, inverse=False):
+        transform = self._transform(context).transform.inv if inverse else self._transform(context).transform
+        y = transform(inputs)
+        logabsdet = transform.log_abs_det_jacobian(inputs, inputs)
+
+        return y, logabsdet
+
+    def log_prob(self, inputs, context, inverse=False):
+        converted_input, logabsdet = self.transform(
+            inputs, context, inverse=inverse
+        )
+        log_prob = self.base_flow_log_prob(
+            converted_input, context, inverse=inverse
+        )
+        dist_pen = -self.distance_object(converted_input, inputs)
+
+        return log_prob, logabsdet, dist_pen
