@@ -501,6 +501,38 @@ def train_top(device, cfg, world_size=None, device_ids=None):
         shuffle=False if world_size is not None else True,
         sampler=DistributedSampler(test_dataset_mc) if world_size is not None else None,
     )
+    test_dataset_mc_full = ParquetDataset(
+        test_file_mc,
+        cfg.context_variables,
+        cfg.target_variables,
+        device=device,
+        pipelines=pipelines_data,
+        rows=None,
+    )
+    test_loader_mc_full = DataLoader(
+        test_dataset_mc_full,
+        batch_size=cfg.test.batch_size,
+        shuffle=False if world_size is not None else True,
+        sampler=DistributedSampler(test_dataset_mc_full)
+        if world_size is not None
+        else None,
+    )
+    test_dataset_data_full = ParquetDataset(
+        test_file_data,
+        cfg.context_variables,
+        cfg.target_variables,
+        device=device,
+        pipelines=pipelines_data,
+        rows=None,
+    )
+    test_loader_data_full = DataLoader(
+        test_dataset_data_full,
+        batch_size=cfg.test.batch_size,
+        shuffle=False if world_size is not None else True,
+        sampler=DistributedSampler(test_dataset_data_full)
+        if world_size is not None
+        else None,
+    )
 
     # freeze base flows
     for param in model_data.parameters():
@@ -643,8 +675,8 @@ def train_top(device, cfg, world_size=None, device_ids=None):
         if epoch % cfg.sample_every == 0 or epoch == 1:
             print("Sampling and plotting...")
             transform_and_plot_top(
-                mc_loader=test_loader_mc,
-                data_loader=test_loader_data,
+                mc_loader=test_loader_mc_full,
+                data_loader=test_loader_data_full,
                 model=model,
                 epoch=epoch,
                 writer=writer,
