@@ -4,7 +4,7 @@ Use Normalizing Flows to morph Hgg-related variables from MC to Data.
 Files containing ```base``` and ```top``` refer to the Flow4Flow method, files containing ```one``` refer to the one-flow method.
 
 ## Environment
-
+For now, see [here](https://github.com/maxgalli/ShowerShapesNormalizingFlow#setup).
 
 
 ## Preprocessing
