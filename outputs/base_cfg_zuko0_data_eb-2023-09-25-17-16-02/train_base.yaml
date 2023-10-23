@@ -1,0 +1,42 @@
+sample: data
+calo: eb
+pipelines: pipe1
+context_variables:
+- probe_pt
+- probe_eta
+- probe_phi
+- probe_fixedGridRhoAll
+target_variables:
+- probe_r9
+- probe_s4
+- probe_sieie
+- probe_sieip
+- probe_etaWidth
+- probe_phiWidth
+- probe_pfPhoIso03
+- probe_pfChargedIsoPFPV
+- probe_pfChargedIsoWorstVtx
+train:
+  size: 1500000
+  batch_size: 2048
+test:
+  size: 100000
+  batch_size: 2048
+model:
+  name: zuko_nsf
+  ntransforms: 12
+  nbins: 16
+  nnodes: 512
+  nlayers: 4
+optimizer:
+  learning_rate: 1.0e-05
+  beta1: 0.9
+  beta2: 0.999
+  weight_decay: 0.0001
+stopper:
+  patience: 10
+  min_delta: 0.2
+distributed: false
+epochs: 200
+sample_every: 10
+checkpoint: null

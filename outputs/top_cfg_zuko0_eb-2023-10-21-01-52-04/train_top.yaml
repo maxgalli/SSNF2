@@ -1,0 +1,48 @@
+calo: eb
+pipelines: pipe1
+context_variables:
+- probe_pt
+- probe_eta
+- probe_phi
+- probe_fixedGridRhoAll
+target_variables:
+- probe_r9
+- probe_s4
+- probe_sieie
+- probe_sieip
+- probe_etaWidth
+- probe_phiWidth
+- probe_pfPhoIso03
+- probe_pfChargedIsoPFPV
+- probe_pfChargedIsoWorstVtx
+train:
+  size: 1500000
+  batch_size: 2048
+test:
+  size: 100000
+  batch_size: 2048
+data:
+  checkpoint: /work/gallim/devel/CQRRelatedStudies/SSNF2/outputs/base_cfg_zuko0_data_eb-2023-09-25-17-16-02
+mc:
+  checkpoint: /work/gallim/devel/CQRRelatedStudies/SSNF2/outputs/base_cfg_zuko0_mc_eb-2023-09-25-13-14-10
+model:
+  name: zuko_nsf
+  ntransforms: 10
+  nbins: 12
+  nnodes: 512
+  nlayers: 4
+  penalty: l1
+  penalty_weight: 0.01
+  anneal: 0
+optimizer:
+  learning_rate: 0.0001
+  beta1: 0.9
+  beta2: 0.999
+  weight_decay: 1.0e-05
+stopper:
+  patience: 15
+  min_delta: 0.05
+distributed: false
+epochs: 200
+sample_every: 5
+checkpoint: null
