@@ -313,6 +313,7 @@ def transform_and_plot_top(
     model,
     epoch,
     writer,
+    comet_logger,
     context_variables,
     target_variables,
     device,
@@ -382,6 +383,7 @@ def transform_and_plot_top(
                 weights=weights_mc,
                 extra_name=f"_top_transformed",
                 writer_epoch=(writer, epoch),
+                cometlogger_epoch=(comet_logger, epoch),
                 labels=None,
             )
 
@@ -421,6 +423,7 @@ def transform_and_plot_top(
                 weights=weights_mc,
                 extra_name="_top",
                 writer_epoch=(writer, epoch),
+                cometlogger_epoch=(comet_logger, epoch),
                 labels=None,
             )
 
@@ -462,6 +465,7 @@ def transform_and_plot_top(
         extra_name="_top",
         labels=None,
         writer_epoch=(writer, epoch), 
+        cometlogger_epoch=(comet_logger, epoch),
     )
 
     # now plot profiles
@@ -504,6 +508,9 @@ def transform_and_plot_top(
             if writer is not None:
                 writer.add_figure(
                     f"profiles_{column}_{cond_column}", fig, epoch
+                )
+                comet_logger.experiment.log_figure(
+                    f"profiles_{column}_{cond_column}", fig, step=epoch
                 )
 
     # close figures

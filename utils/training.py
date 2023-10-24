@@ -557,6 +557,8 @@ def train_top(device, cfg, world_size=None, device_ids=None):
 
     # train the model
     writer = SummaryWriter(log_dir="runs")
+    comet_name = os.getcwd().split("/")[-1]
+    comet_logger = setup_comet_logger(comet_name, cfg.model)
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=cfg.optimizer.learning_rate,
@@ -690,6 +692,7 @@ def train_top(device, cfg, world_size=None, device_ids=None):
                 model=model,
                 epoch=epoch,
                 writer=writer,
+                comet_logger=comet_logger,
                 context_variables=cfg.context_variables,
                 target_variables=cfg.target_variables,
                 device=device,
