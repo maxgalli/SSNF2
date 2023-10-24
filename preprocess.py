@@ -30,12 +30,12 @@ def parse_arguments():
     parser.add_argument(
         "--data-file-pattern",
         type=str,
-        default="../NormalizingFlow/samples/data/DoubleEG/nominal/*.parquet",
+        default="/eos/cms/store/group/ml/ML4ReweightingHackathon/FFFHgg/data/DoubleEG/nominal/*.parquet",
     )
     parser.add_argument(
         "--mc-uncorr-file-pattern",
         type=str,
-        default="../NormalizingFlow/samples/mc_uncorr/DYJetsToLL_M-50_TuneCP5_13TeV-amcatnloFXFX-pythia8/nominal/*.parquet",
+        default="/eos/cms/store/group/ml/ML4ReweightingHackathon/FFFHgg/mc_uncorr/DYJetsToLL_M-50_TuneCP5_13TeV-amcatnloFXFX-pythia8/nominal/*.parquet",
     )
     parser.add_argument("--extra-output-dir", type=str, default=None)
 
