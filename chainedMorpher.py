@@ -68,39 +68,6 @@ class InfiniteLoader(utils.DataLoader):
     def __len__(self):
         return None
 
-class NeuralNet(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_hidden_layers,act=None,out_act=None,dropout=0.0,bn=False):
-        super().__init__()
-        layers = []
-        dcurr = input_dim
-        for i in range(num_hidden_layers):
-            layers.append(nn.Linear(dcurr, hidden_dim))
-            layers.append(nn.ReLU() if act is None else act)
-            if dropout>0:
-                layers.append(nn.Dropout(p=dropout))
-            dcurr = hidden_dim
-        layers.append(nn.Linear(dcurr, output_dim))
-        if out_act is not None:
-            self.out_act = out_act
-            self.do_out = True
-        else:
-            self.do_out = False
-        self.net = nn.Sequential(*layers)
-        self.batchnorm=nn.BatchNorm1d(output_dim)
-        self.bn = bn
-
-    def forward(self, x):
-        x = self.net(x)
-        if self.bn:
-            x = self.batchnorm(x)
-        if self.do_out:
-            x = self.out_act(x)
-        return x
-
-loss_dict = {
-    "MSE":nn.MSELoss(),
-    "BCE":nn.BCELoss()
-}
 
 class chainedNFTrainer:
     def __init__(self,projName,bkg_train,bkg_test,data_train,data_test,varNames,control=[],NF_kwargs={},outDir="NF_models_QR/",rangeScale=3,separateScale=False,minmax=True,useScale=True):
@@ -312,16 +279,16 @@ class chainedNFTrainer:
         self.bkg_trainings[currentVar]['NF_kwargs'] = self.NF_kwargs
         self.bkg_trainings[currentVar]['train_kwargs'] = train_kwargs
         self.bkg_trainings[currentVar]['losses'] = bkg_trainLosses
-        
+
         #encoder = deepcopy(bkg_flow._distribution._context_encoder.to('cpu'))
         #for param in encoder.parameters():
         #    param.requires_grad = False
         #self.bkg_base_dists[currentVar] = ConditionalDiagonalNormal(shape=[1],context_encoder=encoder)
-        
+
         bkg_flowConfig = "bkgFlowConfig_step{0}_{1}".format(self.current,self.fitVars[self.current])
         with open(f"{self.currentDir}/{bkg_flowConfig}.json","w") as cfg_out:
             json.dump(self.bkg_trainings[currentVar],cfg_out,indent=4)
-        
+
         plt.figure(figsize=(8,6))
         w = int(self.bkg_train[currentVar].shape[0]/(5*bs))
         smooth = np.convolve(np.ones(w),bkg_trainLosses,mode='valid')/w
@@ -334,15 +301,15 @@ class chainedNFTrainer:
         plt.xticks(fontsize=14)
         plt.yticks(fontsize=14)
         plt.savefig(f"{self.currentDir}/trainCurve_bkg.pdf")
-        
+
         del bkg_train_context, bkg_train_var, bkg_train_dataset, bkg_loader, bkg_flow
         torch.cuda.empty_cache()
-        
+
     def trainCurrentData(self,bs=10000,n_epoch=100,patience=20,learning_rate=1e-3,wd=0,anneal=True):
         train_kwargs = {'n_epoch':n_epoch,'patience':patience,'learning_rate':learning_rate,'wd':wd}
         currentVar = self.fitVars[self.current]
         contextVars = self.controlVars+self.fitVars[:self.current]
-        
+
         # train data flow
         if len(contextVars) > 0:
             data_train_context = torch.tensor(np.concatenate([self.data_train[n] for n in contextVars],axis=1),dtype=torch.float32,device=device)
@@ -361,11 +328,11 @@ class chainedNFTrainer:
         self.data_trainings[currentVar]['NF_kwargs'] = self.NF_kwargs
         self.data_trainings[currentVar]['train_kwargs'] = train_kwargs
         self.data_trainings[currentVar]['losses'] = data_trainLosses
-        
+
         data_flowConfig = "dataFlowConfig_step{0}_{1}".format(self.current,self.fitVars[self.current])
         with open(f"{self.currentDir}/{data_flowConfig}.json","w") as cfg_out:
             json.dump(self.data_trainings[currentVar],cfg_out,indent=4)
-        
+
         plt.figure(figsize=(8,6))
         w = int(self.data_train[currentVar].shape[0]/(5*bs))
         smooth = np.convolve(np.ones(w),data_trainLosses,mode='valid')/w
@@ -380,7 +347,7 @@ class chainedNFTrainer:
         plt.savefig(f"{self.currentDir}/trainCurve_data.pdf")
         del data_train_context, data_train_var, data_train_dataset, data_loader, data_flow
         torch.cuda.empty_cache()
-        
+
     def trainCurrent(self,bs=10000,n_epoch=100,patience=20,learning_rate=1e-3,wd=0,anneal=True):
         self.trainCurrentBkg(bs=bs,n_epoch=n_epoch,patience=patience,
                               learning_rate=learning_rate,wd=wd,anneal=anneal)
@@ -388,19 +355,19 @@ class chainedNFTrainer:
                               learning_rate=learning_rate,wd=wd,anneal=anneal)
         self.plotDensity(bkg=True,data=False)
         self.plotDensity(bkg=False,data=True)
-        
+
     def loadCurrent(self):
         currentVar = self.fitVars[self.current]
         with open(f"{self.currentDir}/dataFlowConfig_step{self.current}_{currentVar}.json","r") as f:
             self.data_trainings[currentVar] = json.load(f)
         with open(f"{self.currentDir}/bkgFlowConfig_step{self.current}_{currentVar}.json","r") as f:
             self.bkg_trainings[currentVar] = json.load(f)
-        
+
     def plotDensity(self,bkg=False,data=False,ylim=None):
         currentVar = self.fitVars[self.current]
         contextVars = self.controlVars+self.fitVars[:self.current]
         contextIdx = [self.varNames.index(v) for v in contextVars]
-        
+
         if bkg:
             bkg_flow = self.get_flow(1,len(self.bkg_trainings[currentVar]['contextVars']),
                                      self.bkg_trainings[currentVar]['flowLoc'],
@@ -430,7 +397,7 @@ class chainedNFTrainer:
             self.plotPair(bkg_test_var[:,0],bkg_samples[:,0],'bkg',plotName,log=True,ylim=ylim)
             del bkg_flow, bkg_samples, bkg_test_var
             torch.cuda.empty_cache()
-        
+
         if data:
             base_dist = self.bkg_base_dists[currentVar]
             data_flow = self.get_flow(1,len(self.data_trainings[currentVar]['contextVars']),self.data_trainings[currentVar]['flowLoc'],self.data_trainings[currentVar]['NF_kwargs'],base_dist=base_dist).to(device)
@@ -457,7 +424,7 @@ class chainedNFTrainer:
             self.plotPair(data_test_var[:,0],data_samples[:,0],'data',plotName,log=True,ylim=ylim)
             del data_flow, data_samples, data_test_var
             torch.cuda.empty_cache()
-            
+
     def plotPair(self,ref,samples,sampName,saveName,log=False,ylim=None):
         plt.subplots(figsize=(8,6),nrows=2,ncols=1,gridspec_kw={'height_ratios':[3,1]},sharex=True)
         plt.subplot(211)
@@ -483,16 +450,16 @@ class chainedNFTrainer:
         plt.ylabel("Ratio")
         plt.xlabel(self.fitVars[self.current])
         plt.savefig(saveName)
-        
+
     def correctCurrent(self,n_per=10000,pad=0.1):
         currentVar = self.fitVars[self.current]
         contextVars = self.controlVars+self.fitVars[:self.current]
         contextIdx = [self.varNames.index(v) for v in contextVars]
-        
+
         bkg_flow = self.get_flow(1,len(self.bkg_trainings[currentVar]['contextVars']),self.bkg_trainings[currentVar]['flowLoc'],self.bkg_trainings[currentVar]['NF_kwargs']).to(device)
         data_flow = self.get_flow(1,len(self.data_trainings[currentVar]['contextVars']),self.data_trainings[currentVar]['flowLoc'],self.data_trainings[currentVar]['NF_kwargs']).to(device)
-        
-        
+
+
         # correct training set
         if len(contextVars) > 0:
             bkg_train_context_bkg = self.scale(np.concatenate([self.correctedBkg_train[n] for n in contextVars],axis=1),"bkg",forward=True,idx=contextIdx)
@@ -530,7 +497,7 @@ class chainedNFTrainer:
         bkg_train_corr = self.scale(np.concatenate(bkg_train_corr,axis=0),"data",forward=False,idx=self.varNames.index(currentVar))
         self.correctedBkg_train[currentVar] = np.copy(bkg_train_corr)
         del bkg_train_corr
-        
+
         # correct test set
         if len(contextVars) > 0:
             bkg_test_context_bkg = self.scale(np.concatenate([self.correctedBkg_test[n] for n in contextVars],axis=1),"bkg",forward=True,idx=contextIdx)
@@ -568,20 +535,20 @@ class chainedNFTrainer:
         bkg_test_corr = self.scale(np.concatenate(bkg_test_corr,axis=0),"data",forward=False,idx=self.varNames.index(currentVar))
         self.correctedBkg_test[currentVar] = np.copy(bkg_test_corr)
         del bkg_test_corr
-        
+
         del bkg_flow, data_flow
         torch.cuda.empty_cache()
-        
+
     def correctFull(self,bkg,n_per=10000):
         bkg_corr = {self.varNames[i]:bkg[:,i].reshape(-1,1) for i in range(len(self.varNames))}
         bkg = self.scale(bkg,"bkg",forward=True)
         bkg = {self.varNames[i]:bkg[:,i].reshape(-1,1) for i in range(len(self.varNames))}
-        
+
         for j,v in enumerate(self.fitVars):
             currentVar = v
             contextVars = self.controlVars+self.fitVars[:j]
             contextIdx = [self.varNames.index(v) for v in contextVars]
-            
+
             bkg_flow = self.get_flow(1,len(self.bkg_trainings[currentVar]['contextVars']),self.bkg_trainings[currentVar]['flowLoc'],self.bkg_trainings[currentVar]['NF_kwargs']).to(device)
             base_dist = self.bkg_base_dists[currentVar]
             data_flow = self.get_flow(1,len(self.data_trainings[currentVar]['contextVars']),self.data_trainings[currentVar]['flowLoc'],self.data_trainings[currentVar]['NF_kwargs'],base_dist=base_dist).to(device)
@@ -617,7 +584,7 @@ class chainedNFTrainer:
             corr = self.scale(np.concatenate(corr,axis=0),"data",forward=False,idx=self.varNames.index(currentVar))
             bkg_corr[currentVar] = np.copy(corr)
             del corr
-        
+
         return np.concatenate([bkg_corr[v] for v in self.varNames],axis=1)
 
     def plotTriplet(self,ref,corr,uncorr,bins=50,xlabel="",title="",saveName="",log=False,xlim=None,ylim=None):
@@ -704,184 +671,12 @@ class chainedNFTrainer:
     def stepTo(self,step):
         self.current = step
 
-class chainedNFCorrector:
-    def __init__(self,baseDir,separateScale=False):
-        self.baseDir = baseDir
-        self.separateScale = separateScale
-        self.dirs = [f"{baseDir}/{d}" for d in os.listdir(baseDir) if os.path.isdir(f"{baseDir}/{d}") and 'step' in d]
-        self.dirs.sort(key=lambda x: int(re.search('step(\d+)',x).group(1)))
-        self.steps = [f.split("/")[-1] for f in self.dirs]
-        with open(f"{self.baseDir}/info.json") as f:
-            self.info = json.load(f)
-        for k in self.info.keys():
-            setattr(self,k,self.info[k])
-        self.bkg_means = np.array(self.bkg_means)
-        self.bkg_stds = np.array(self.bkg_stds)
-        self.bkg_mins = np.array(self.bkg_mins)
-        self.bkg_maxes = np.array(self.bkg_maxes)
-        self.data_means = np.array(self.data_means)
-        self.data_stds = np.array(self.data_stds)
-        self.data_mins = np.array(self.data_mins)
-        self.data_maxes = np.array(self.data_maxes)
-
-    def scale(self,inputs,mode,forward=True,idx=None):
-        if not self.useScale:
-            return inputs
-        else:
-            if not self.separateScale:
-                mins = np.minimum(self.bkg_mins,self.data_mins)
-                maxes = np.maximum(self.bkg_maxes,self.data_maxes)
-            else:
-                mins = self.bkg_mins if mode=='bkg' else self.data_mins
-                maxes = self.bkg_maxes if mode=='bkg' else self.data_maxes
-            means = self.bkg_means
-            stds = self.bkg_stds
-            scale = np.where(np.abs(maxes)>np.abs(mins),np.abs(maxes),np.abs(mins))
-            if idx is not None:
-                mins,maxes,means,stds = mins[idx],maxes[idx],means[idx],stds[idx]
-                scale = scale[idx]
-            if forward:
-                if self.minmax:
-                    inputs = 2*self.rangeScale*((inputs-mins)/(maxes-mins)-0.5)
-                else:
-                    inputs = (inputs-means)/stds
-            else:
-                if self.minmax:
-                    inputs = (maxes-mins)*(inputs/(2*self.rangeScale) + 0.5) + mins
-                else:
-                    inputs = inputs*stds + means
-            return inputs
-
-    def new_flow(self,num_features,num_context,kwargs):
-        return make_flow(num_features,num_context,kwargs)
-
-    def get_flow(self,n_features,n_context,loc,kwargs):
-        flow = self.new_flow(n_features,n_context,kwargs)
-        flow.load_state_dict(torch.load(loc))
-        flow.eval()
-        return flow
-
-    def correctFull(self,bkg,n_per=10000):
-        bkg_corr = {self.varNames[i]:bkg[:,i].reshape(-1,1) for i in range(len(self.varNames))}
-        bkg = self.scale(bkg,"bkg",forward=True)
-        bkg = {self.varNames[i]:bkg[:,i].reshape(-1,1) for i in range(len(self.varNames))}
-
-        for j,v in enumerate(self.fitVars):
-            currentVar = v
-            contextVars = self.controlVars+self.fitVars[:j]
-            contextIdx = [self.varNames.index(v) for v in contextVars]
-            print(contextIdx)
-
-            flowDir = f"{self.baseDir}/{self.dirs[j]}/"
-            with open(f"{self.dirs[j]}/dataFlowConfig_{self.steps[j]}.json") as fj:
-                dataFlowJson = json.load(fj)
-            dataFlowLoc = f"{self.dirs[j]}/dataFlow_{self.steps[j]}.pt"
-            with open(f"{self.dirs[j]}/bkgFlowConfig_{self.steps[j]}.json") as fj:
-                bkgFlowJson = json.load(fj)
-            bkgFlowLoc = f"{self.dirs[j]}/bkgFlow_{self.steps[j]}.pt"
-
-            bkg_flow = self.get_flow(1,len(bkgFlowJson['contextVars']),bkgFlowLoc,bkgFlowJson['NF_kwargs']).to(device)
-            data_flow = self.get_flow(1,len(dataFlowJson['contextVars']),dataFlowLoc,dataFlowJson['NF_kwargs']).to(device)
-
-            # correct training set
-            if len(contextVars) > 0:
-                context_bkg = self.scale(np.concatenate([bkg_corr[n] for n in contextVars],axis=1),"bkg",forward=True,idx=contextIdx)
-                context_data = self.scale(np.concatenate([bkg_corr[n] for n in contextVars],axis=1),"data",forward=True,idx=contextIdx)
-            else:
-                context_bkg = np.zeros(bkg[currentVar].shape)
-                context_data = np.zeros(bkg[currentVar].shape)
-            inputs = bkg[currentVar]
-            nEvts = inputs.shape[0]
-            split = np.array_split(np.arange(nEvts),nEvts//n_per + 1)
-            context_bkg = [context_bkg[k] for k in split]
-            context_data = [context_data[k] for k in split]
-            inputs = [inputs[k] for k in split]
-            corr = []
-            for i in tqdm(range(len(split))):
-                inputs_i = torch.tensor(inputs[i],dtype=torch.float32,device=device)
-                context_i_bkg = torch.tensor(context_bkg[i],dtype=torch.float32,device=device)
-                context_i_data = torch.tensor(context_data[i],dtype=torch.float32,device=device)
-                with torch.no_grad():
-                    if torch.all(context_i_bkg==0):
-                        noise = bkg_flow.transform_to_noise(inputs=inputs_i)
-                        corrected = data_flow._transform.inverse(noise)[0]
-                    else:
-                        noise = bkg_flow.transform_to_noise(inputs=inputs_i,context=context_i_bkg)
-                        corrected = data_flow._transform.inverse(noise,context=context_i_data)[0]
-                corr.append(corrected.detach().cpu().numpy())
-                del inputs_i,context_i_bkg,context_i_data,noise,corrected
-                torch.cuda.empty_cache()
-            corr = self.scale(np.concatenate(corr,axis=0),"data",forward=False,idx=self.varNames.index(currentVar))
-            bkg_corr[currentVar] = np.copy(corr)
-            del corr
-
-        return np.concatenate([bkg_corr[v] for v in self.fitVars],axis=1)
-
-    def invertFull(self,data,n_per=10000):
-        data_corr = {self.varNames[i]:data[:,i].reshape(-1,1) for i in range(len(self.varNames))}
-        data = self.scale(data,"data",forward=True)
-        data = {self.varNames[i]:data[:,i].reshape(-1,1) for i in range(len(self.varNames))}
-
-        for j in range(len(self.fitVars)-1,-1,-1):
-            v = self.fitVars[j]
-            currentVar = v
-            contextVars = self.controlVars+self.fitVars[:j]
-            contextIdx = [self.varNames.index(v) for v in contextVars]
-            print(contextIdx)
-
-            flowDir = f"{self.baseDir}/{self.dirs[j]}/"
-            with open(f"{self.dirs[j]}/dataFlowConfig_{self.steps[j]}.json") as fj:
-                dataFlowJson = json.load(fj)
-            dataFlowLoc = f"{self.dirs[j]}/dataFlow_{self.steps[j]}.pt"
-            with open(f"{self.dirs[j]}/bkgFlowConfig_{self.steps[j]}.json") as fj:
-                bkgFlowJson = json.load(fj)
-            bkgFlowLoc = f"{self.dirs[j]}/bkgFlow_{self.steps[j]}.pt"
-
-            bkg_flow = self.get_flow(1,len(bkgFlowJson['contextVars']),bkgFlowLoc,bkgFlowJson['NF_kwargs']).to(device)
-            data_flow = self.get_flow(1,len(dataFlowJson['contextVars']),dataFlowLoc,dataFlowJson['NF_kwargs']).to(device)
-
-            # correct training set
-            if len(contextVars) > 0:
-                context_bkg = self.scale(np.concatenate([data_corr[n] for n in contextVars],axis=1),"bkg",forward=True,idx=contextIdx)
-                context_data = self.scale(np.concatenate([data_corr[n] for n in contextVars],axis=1),"data",forward=True,idx=contextIdx)
-            else:
-                context_bkg = np.zeros(data[currentVar].shape)
-                context_data = np.zeros(data[currentVar].shape)
-            inputs = data[currentVar]
-            nEvts = inputs.shape[0]
-            split = np.array_split(np.arange(nEvts),nEvts//n_per + 1)
-            context_bkg = [context_bkg[k] for k in split]
-            context_data = [context_data[k] for k in split]
-            inputs = [inputs[k] for k in split]
-            corr = []
-            for i in tqdm(range(len(split))):
-                inputs_i = torch.tensor(inputs[i],dtype=torch.float32,device=device)
-                context_i_bkg = torch.tensor(context_bkg[i],dtype=torch.float32,device=device)
-                context_i_data = torch.tensor(context_data[i],dtype=torch.float32,device=device)
-                with torch.no_grad():
-                    if torch.all(context_i_bkg==0):
-                        noise = data_flow.transform_to_noise(inputs=inputs_i)
-                        corrected = bkg_flow._transform.inverse(noise)[0]
-                    else:
-                        noise = data_flow.transform_to_noise(inputs=inputs_i,context=context_i_data)
-                        corrected = bkg_flow._transform.inverse(noise,context=context_i_bkg)[0]
-                corr.append(corrected.detach().cpu().numpy())
-                del inputs_i,context_i_bkg,context_i_data,noise,corrected
-                torch.cuda.empty_cache()
-            corr = self.scale(np.concatenate(corr,axis=0),"bkg",forward=False,idx=self.varNames.index(currentVar))
-            data_corr[currentVar] = np.copy(corr)
-            del corr
-
-        return np.concatenate([data_corr[v] for v in self.fitVars],axis=1)
-
-
 def make_flow(num_features,num_context,kwargs,perm=False,base_dist=None):
     flow_type = kwargs['flow_type']
     if base_dist is None:
         if num_context == 0:
             base_dist = StandardNormal(shape=[num_features])
         else:
-            #encoder = NeuralNet(num_context, 20, 2*num_features, 3, out_act=nn.Identity())
             encoder = nn.Linear(num_context,2*num_features)
             base_dist = ConditionalDiagonalNormal(shape=[num_features],context_encoder=encoder)
     base_dist = StandardNormal(shape=[num_features])
@@ -980,62 +775,3 @@ def trainflows(iMC_train,
         trainer.stepForward()
 
     return trainer
-
-def ratioComp(iData,
-              iMC,
-              iMCCorr,
-              bin_edge,
-              name):#
-
-    np.seterr(invalid="ignore")
-
-    ratio1=iMC/iData;     err1=np.sqrt((ratio1**2/iMC)+(ratio1**2/iData))
-    ratio2=iMCCorr/iData; err2=np.sqrt((ratio2**2/iMCCorr)+(ratio2**2/iData))
-    bincenter = 0.5 * (bin_edge[1:] + bin_edge[:-1])
-    plt.errorbar(bincenter, ratio1, yerr=err1, fmt='.', color='r',label='MC/Data')
-    plt.errorbar(bincenter, ratio2, yerr=err2, fmt='.', color='g',label='MCCorr/Data')
-    plt.ylim(0,2)
-    plt.xlabel('Shifted Var')
-    plt.ylabel("Ratio")
-    plt.legend()
-    plt.ylim(0,2.0)
-    plt.show()
-    plt.savefig(name)
-
-def quantileComp(iData,
-                 iMC,
-                 iMCCorr,
-                 name):
-
-    val1,_,_ = plt.hist(iMC,
-        alpha=0.5,
-        density=True,
-        bins=np.arange(-4,4,0.25),
-        color='r',
-        label='MC')
-
-    val2,_,_ = plt.hist(iData,
-        alpha=0.5,
-        density=True,
-        bins=np.arange(-4,4,0.25),
-        color='b',
-        label='Data')
-
-    valc,bin_edge,_ = plt.hist(iMCCorr,
-        alpha=0.5,
-        density=True,
-        bins=np.arange(-4,4,0.25),
-        color='g',
-        label='shifted MC')
-
-    plt.xlabel('Shifted Var')
-    plt.ylabel("pdf")
-    plt.legend()
-    plt.show()
-    plt.savefig(f'{name}.pdf')
-    plt.clf()
-
-    val1*=len(iMC)
-    val2*=len(iData)
-    valc*=len(iMCCorr)
-    ratioComp(val2,val1,valc,bin_edge,f'{name}_ratio.pdf')

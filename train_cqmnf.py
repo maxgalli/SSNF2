@@ -37,16 +37,18 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 torch.set_default_tensor_type('torch.cuda.FloatTensor') if torch.cuda.is_available() else print ('cpu')
 
 class DataSet(Dataset):
+    train_size = 2000000
+    test_size = 100000
     def __init__(self, path, columns):
-        super(DataSet, self).__init__()
+        super().__init__()
         self.path = path
         self.columns = columns
         self.dask_dataset = dd.read_parquet(path, columns=columns, engine='fastparquet')
         self.np_dataset = self.dask_dataset.values.compute()
-        self.np_train = self.np_dataset[:50000]
-        self.np_test = self.np_dataset[50000:100000]
-        self.transformed_train = self.transform(self.dask_dataset, self.columns)[:50000]
-        self.transformed_test = self.transform(self.dask_dataset, self.columns)[50000:100000]
+        self.np_train = self.np_dataset[:self.train_size]
+        self.np_test = self.np_dataset[self.train_size:self.train_size+self.test_size]
+        self.transformed_train = self.transform(self.dask_dataset, self.columns)[:self.train_size]
+        self.transformed_test = self.transform(self.dask_dataset, self.columns)[self.train_size:self.train_size+self.test_size]
         self.inverse_transformed_test = self.inverse_transform(self.transformed_test, self.columns)
         self.corrected_test = None
 
@@ -106,13 +108,15 @@ columns = shower_shapes + isolation
 
 data = DataSet('preprocess/data_eb_train.parquet', columns)
 mc = DataSet('preprocess/mc_eb_train.parquet', columns)
+print(f'Data shape is {data.np_dataset.shape}')
+print(f'MC shape is {mc.np_dataset.shape}')
 
 trainer = trainflows(
     mc.transformed_train.copy(),
     mc.transformed_test.copy(),
     data.transformed_train.copy(),
     data.transformed_test.copy(),
-    iNLayers=3,
+    iNLayers=5,
     iSeparateScale=False)
 
 mc.correct(trainer)
@@ -150,8 +154,8 @@ data_extra = DataSet('preprocess/data_eb_train.parquet', columns+extra)
 mc_extra = DataSet('preprocess/mc_eb_train.parquet', columns+extra)
 
 logger.info('Calculate photon ID MVA')
-pho_id_data_test = calculate_photonid_mva(data_extra.dask_dataset, 'eb', var_range=(50000,100000))
-pho_id_mc_test = calculate_photonid_mva(mc_extra.dask_dataset, 'eb', var_range=(50000,100000))
+pho_id_data_test = calculate_photonid_mva(data_extra.dask_dataset, 'eb', var_range=(DataSet.train_size,DataSet.train_size+DataSet.test_size))
+pho_id_mc_test = calculate_photonid_mva(mc_extra.dask_dataset, 'eb', var_range=(DataSet.train_size,DataSet.train_size+DataSet.test_size))
 pho_id_mc_corr_test = calculate_photonid_mva(mccorr_df_test, 'eb')
 
 dump_main_plot(
