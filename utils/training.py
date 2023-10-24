@@ -681,23 +681,6 @@ def train_top(device, cfg, world_size=None, device_ids=None):
                 epoch,
             )
             comet_logger.log_metrics(
-                {"train_total": epoch_train_loss, "val_total": epoch_test_loss},
-                step=epoch,
-            )
-            comet_logger.log_metrics(
-                {"train_log_prob": epoch_train_loss_1, "val_log_prob": epoch_test_loss_1},
-                step=epoch,
-            )
-            comet_logger.log_metrics(
-                {"train_logabsdet": epoch_train_loss_2, "val_logabsdet": epoch_test_loss_2},
-                step=epoch,
-            )
-            comet_logger.log_metrics(
-                {"train_distance": epoch_train_loss_3, "val_distance": epoch_test_loss_3},
-                step=epoch,
-            )
-            # all together
-            comet_logger.log_metrics(
                 {
                     "train_total": epoch_train_loss,
                     "val_total": epoch_test_loss,
