@@ -14,8 +14,6 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 
-from lightning.pytorch.loggers import CometLogger
-
 from utils.datasets import ddp_setup, ParquetDataset, ParquetDatasetOne
 from utils.custom_models import (
     create_mixture_flow_model,
@@ -681,6 +679,36 @@ def train_top(device, cfg, world_size=None, device_ids=None):
                 "Distance",
                 {"train": epoch_train_loss_3, "val": epoch_test_loss_3},
                 epoch,
+            )
+            comet_logger.log_metrics(
+                {"train_total": epoch_train_loss, "val_total": epoch_test_loss},
+                step=epoch,
+            )
+            comet_logger.log_metrics(
+                {"train_log_prob": epoch_train_loss_1, "val_log_prob": epoch_test_loss_1},
+                step=epoch,
+            )
+            comet_logger.log_metrics(
+                {"train_logabsdet": epoch_train_loss_2, "val_logabsdet": epoch_test_loss_2},
+                step=epoch,
+            )
+            comet_logger.log_metrics(
+                {"train_distance": epoch_train_loss_3, "val_distance": epoch_test_loss_3},
+                step=epoch,
+            )
+            # all together
+            comet_logger.log_metrics(
+                {
+                    "train_total": epoch_train_loss,
+                    "val_total": epoch_test_loss,
+                    "train_log_prob": epoch_train_loss_1,
+                    "val_log_prob": epoch_test_loss_1,
+                    "train_logabsdet": epoch_train_loss_2,
+                    "val_logabsdet": epoch_test_loss_2,
+                    "train_distance": epoch_train_loss_3,
+                    "val_distance": epoch_test_loss_3,
+                },
+                step=epoch,
             )
 
         # sample and validation
