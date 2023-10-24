@@ -19,7 +19,7 @@ def load_photonid_mva(fname):
     return photonid_mva
 
 
-def calculate_photonid_mva(dataframe, calo):
+def calculate_photonid_mva(dataframe, calo, var_range=None):
     """Recompute PhotonIDMVA on-the-fly. This step is necessary considering that the inputs have to be corrected
     with the QRC process. Following is the list of features (barrel has 12, endcap two more):
     EB:
@@ -59,7 +59,7 @@ def calculate_photonid_mva(dataframe, calo):
 
     photonid_mva = load_photonid_mva(phoid_files[calo])
 
-    bdt_inputs = dataframe[var_order].to_numpy()
+    bdt_inputs = dataframe[var_order].values.compute()[var_range[0]:var_range[1]] if var_range else dataframe[var_order].values.compute()
     tempmatrix = xgboost.DMatrix(
         bdt_inputs, feature_names=[var.replace("probe_", "") for var in var_order]
     )

@@ -141,5 +141,7 @@ jobs/*.err
 jobs/*.out
 outputs/*
 preprocess/*.parquet
-preprocess/figures/*
+preprocess/*figures/*
 preprocess/*.pkl
+
+*.DS_Store
