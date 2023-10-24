@@ -2,6 +2,7 @@ import logging
 from rich.logging import RichHandler
 from rich.console import Console
 from typing import Optional
+from lightning.pytorch.loggers import CometLogger
 
 
 def setup_logger(
@@ -55,3 +56,18 @@ def setup_logger(
     dask_logger.setLevel(logging.CRITICAL + 1)
 
     return logger
+
+
+def setup_comet_logger(name, cfg_model):
+    comet_logger = CometLogger(
+        api_key="DzzVXiirHMuZBc2iIketfZWbm",
+        workspace="maxgalli",
+        project_name="ssnf2",
+        #experiment_name="",
+        #save_dir="",
+        offline=False,
+    )
+    comet_logger.experiment.set_name(name)
+    for k, v in cfg_model.items():
+        comet_logger.experiment.log_parameter(k, v)
+    return comet_logger

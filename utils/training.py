@@ -1,6 +1,7 @@
 import numpy as np
 import pickle as pkl
 import time
+import os
 import logging
 
 logger = logging.getLogger(__name__)
@@ -13,6 +14,8 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 
+from lightning.pytorch.loggers import CometLogger
+
 from utils.datasets import ddp_setup, ParquetDataset, ParquetDatasetOne
 from utils.custom_models import (
     create_mixture_flow_model,
@@ -22,6 +25,7 @@ from utils.custom_models import (
 )
 from utils.models import get_conditional_base_flow, get_zuko_nsf
 from utils.plots import sample_and_plot_base, transform_and_plot_top, plot_one
+from utils.log import setup_comet_logger
 
 
 class EarlyStopping:
@@ -197,6 +201,8 @@ def train_base(device, cfg, world_size=None, device_ids=None):
 
     # train the model
     writer = SummaryWriter(log_dir="runs")
+    comet_name = os.getcwd().split("/")[-1]
+    comet_logger = setup_comet_logger(comet_name, cfg.model)
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=cfg.optimizer.learning_rate,
@@ -268,6 +274,9 @@ def train_base(device, cfg, world_size=None, device_ids=None):
             writer.add_scalars(
                 "Losses", {"train": epoch_train_loss, "val": epoch_test_loss}, epoch
             )
+            comet_logger.log_metrics(
+                {"train": epoch_train_loss, "val": epoch_test_loss}, step=epoch
+            )
 
         # sample and validation
         if epoch % cfg.sample_every == 0 or epoch == 1:
@@ -278,6 +287,7 @@ def train_base(device, cfg, world_size=None, device_ids=None):
                 model_name=cfg.model.name,
                 epoch=epoch,
                 writer=writer,
+                comet_logger=comet_logger,
                 context_variables=cfg.context_variables,
                 target_variables=cfg.target_variables,
                 device=device,

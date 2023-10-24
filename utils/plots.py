@@ -95,6 +95,7 @@ def dump_main_plot(
     extra_name="",
     labels=None,
     writer_epoch=None,
+    cometlogger_epoch=None,
 ):
     name = variable_conf["name"]
     title = variable_conf["title"] + "_" + subdetector
@@ -204,7 +205,10 @@ def dump_main_plot(
     if writer_epoch is not None:
         writer, epoch = writer_epoch
         writer.add_figure(fig_name, fig, epoch)
-    else:
+    if cometlogger_epoch is not None:
+        comet_logger, epoch = cometlogger_epoch
+        comet_logger.experiment.log_figure(fig_name, fig, step=epoch)
+    if writer_epoch is None and cometlogger_epoch is None:
         for dr in output_dir:
             for ext in ["pdf", "png"]:
                 fig.savefig(dr + "/" + fig_name + "." + ext, bbox_inches="tight")
@@ -217,6 +221,7 @@ def sample_and_plot_base(
     model_name,
     epoch,
     writer,
+    comet_logger,
     context_variables,
     target_variables,
     device,
@@ -264,6 +269,7 @@ def sample_and_plot_base(
                 subdetector=calo,
                 extra_name=f"_reco_sampled_transformed",
                 writer_epoch=(writer, epoch),
+                cometlogger_epoch=(comet_logger, epoch),
                 labels=["Original", "Sampled"],
             )
 
@@ -296,6 +302,7 @@ def sample_and_plot_base(
             subdetector=calo,
             extra_name=f"_reco_sampled",
             writer_epoch=(writer, epoch),
+            cometlogger_epoch=(comet_logger, epoch),
             labels=["Original", "Sampled"],
         )
 
