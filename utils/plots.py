@@ -207,7 +207,7 @@ def dump_main_plot(
         writer.add_figure(fig_name, fig, epoch)
     if cometlogger_epoch is not None:
         comet_logger, epoch = cometlogger_epoch
-        comet_logger.experiment.log_figure(fig_name, fig, step=epoch)
+        comet_logger.log_figure(fig_name, fig, step=epoch)
     if writer_epoch is None and cometlogger_epoch is None:
         for dr in output_dir:
             for ext in ["pdf", "png"]:
@@ -509,7 +509,7 @@ def transform_and_plot_top(
                 writer.add_figure(
                     f"profiles_{column}_{cond_column}", fig, epoch
                 )
-                comet_logger.experiment.log_figure(
+                comet_logger.log_figure(
                     f"profiles_{column}_{cond_column}", fig, step=epoch
                 )
 

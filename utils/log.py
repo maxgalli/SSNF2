@@ -2,7 +2,7 @@ import logging
 from rich.logging import RichHandler
 from rich.console import Console
 from typing import Optional
-from lightning.pytorch.loggers import CometLogger
+from comet_ml import Experiment
 
 
 def setup_logger(
@@ -59,15 +59,14 @@ def setup_logger(
 
 
 def setup_comet_logger(name, cfg_model):
-    comet_logger = CometLogger(
+    comet_logger = Experiment(
         api_key="DzzVXiirHMuZBc2iIketfZWbm",
         workspace="maxgalli",
         project_name="ssnf2",
         #experiment_name="",
         #save_dir="",
-        offline=False,
     )
-    comet_logger.experiment.set_name(name)
+    comet_logger.set_name(name)
     for k, v in cfg_model.items():
-        comet_logger.experiment.log_parameter(k, v)
+        comet_logger.log_parameter(k, v)
     return comet_logger
