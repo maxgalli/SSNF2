@@ -206,8 +206,7 @@ def dump_main_plot(
         writer.add_figure(fig_name, fig, epoch)
     else:
         for dr in output_dir:
-            for ext in ["pdf", "png"]:
-                fig.savefig(dr + "/" + fig_name + "." + ext, bbox_inches="tight")
+            fig.savefig(dr + "/" + fig_name + ".png", bbox_inches="tight")
     plt.close(fig)
 
 

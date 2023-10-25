@@ -37,19 +37,15 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 torch.set_default_tensor_type('torch.cuda.FloatTensor') if torch.cuda.is_available() else print ('cpu')
 
 class DataSet(Dataset):
-    train_size = 2000000
-    test_size = 100000
+
     def __init__(self, path, columns):
         super().__init__()
         self.path = path
         self.columns = columns
         self.dask_dataset = dd.read_parquet(path, columns=columns, engine='fastparquet')
         self.np_dataset = self.dask_dataset.values.compute()
-        self.np_train = self.np_dataset[:self.train_size]
-        self.np_test = self.np_dataset[self.train_size:self.train_size+self.test_size]
-        self.transformed_train = self.transform(self.dask_dataset, self.columns)[:self.train_size]
-        self.transformed_test = self.transform(self.dask_dataset, self.columns)[self.train_size:self.train_size+self.test_size]
-        self.inverse_transformed_test = self.inverse_transform(self.transformed_test, self.columns)
+        self.transformed = self.transform(self.dask_dataset, self.columns)
+        self.inverse_transformed = self.inverse_transform(self.transformed, self.columns)
         self.corrected_test = None
 
     def __getitem__(self, index):
@@ -106,20 +102,22 @@ extra = [
 ]
 columns = shower_shapes + isolation
 
-data = DataSet('preprocess/data_eb_train.parquet', columns)
-mc = DataSet('preprocess/mc_eb_train.parquet', columns)
-print(f'Data shape is {data.np_dataset.shape}')
-print(f'MC shape is {mc.np_dataset.shape}')
+data_train = DataSet('preprocess/data_eb_train.parquet', columns)
+mc_train = DataSet('preprocess/mc_eb_train.parquet', columns)
+
+data_test = DataSet('preprocess/data_eb_test.parquet', columns)
+mc_test = DataSet('preprocess/mc_eb_test.parquet', columns)
+
 
 trainer = trainflows(
-    mc.transformed_train.copy(),
-    mc.transformed_test.copy(),
-    data.transformed_train.copy(),
-    data.transformed_test.copy(),
-    iNLayers=5,
+    mc_train.transformed.copy(),
+    mc_test.transformed.copy(),
+    data_train.transformed.copy(),
+    data_test.transformed.copy(),
+    iNLayers=2,
     iSeparateScale=False)
 
-mc.correct(trainer)
+mc_test.correct(trainer)
 
 with open('./preprocess/var_specs.json', 'r') as f:
     vars_config = json.load(f)
@@ -136,26 +134,26 @@ fig_output_dirs.append(fig_output_dir)
 for col in columns:
     print(f'plotting {col}')
     dump_main_plot(
-        data.np_test[:, columns.index(col)],
-        mc.np_test[:, columns.index(col)],
+        data_test.np_dataset[:, columns.index(col)],
+        mc_test.np_dataset[:, columns.index(col)],
         vars_config[col],
         fig_output_dirs,
         'eb',
-        mc_corr=mc.corrected_test[:, columns.index(col)],
+        mc_corr=mc_test.corrected[:, columns.index(col)],
         weights=None,
         extra_name='_test_pre')
 
 # photon ID MVA
-mc_extra = DataSet('preprocess/mc_eb_train.parquet', extra)
-mccorr_test = np.hstack((mc.corrected_test, mc_extra.np_test))
+mc_extra = DataSet('preprocess/mc_eb_test.parquet', extra)
+mccorr_test = np.hstack((mc_test.corrected, mc_extra.np_dataset))
 mccorr_df_test = dd.from_array(mccorr_test, columns=columns+extra)
 
-data_extra = DataSet('preprocess/data_eb_train.parquet', columns+extra)
-mc_extra = DataSet('preprocess/mc_eb_train.parquet', columns+extra)
+data_extra = DataSet('preprocess/data_eb_test.parquet', columns+extra)
+mc_extra = DataSet('preprocess/mc_eb_test.parquet', columns+extra)
 
 logger.info('Calculate photon ID MVA')
-pho_id_data_test = calculate_photonid_mva(data_extra.dask_dataset, 'eb', var_range=(DataSet.train_size,DataSet.train_size+DataSet.test_size))
-pho_id_mc_test = calculate_photonid_mva(mc_extra.dask_dataset, 'eb', var_range=(DataSet.train_size,DataSet.train_size+DataSet.test_size))
+pho_id_data_test = calculate_photonid_mva(data_extra.dask_dataset, 'eb')
+pho_id_mc_test = calculate_photonid_mva(mc_extra.dask_dataset, 'eb')
 pho_id_mc_corr_test = calculate_photonid_mva(mccorr_df_test, 'eb')
 
 dump_main_plot(
