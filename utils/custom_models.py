@@ -817,19 +817,23 @@ def load_model(device, model_dir=None, filename=None, which="mixture"):
     )
 
 
-def load_fff_mixture_model(top_file, mc_file, data_file, top_penalty):
+def load_fff_model(top_file, mc_file, data_file, top_penalty, which="mixture"):
+    if which == "mixture":
+        create_fn = create_mixture_flow_model
+    elif which == "zuko_nsf":
+        create_fn = get_zuko_nsf
     checkpoint_top = torch.load(top_file, map_location="cpu")
     checkpoint_mc = torch.load(mc_file, map_location="cpu")
     checkpoint_data = torch.load(data_file, map_location="cpu")
 
-    model_mc = create_mixture_flow_model(**checkpoint_mc["model_hyperparams"])
+    model_mc = create_fn(**checkpoint_mc["model_hyperparams"])
     # model_mc.load_state_dict(checkpoint_mc["model_state_dict"])
     # model_mc.eval()
-    model_data = create_mixture_flow_model(**checkpoint_data["model_hyperparams"])
+    model_data = create_fn(**checkpoint_data["model_hyperparams"])
     # model_data.load_state_dict(checkpoint_data["model_state_dict"])
     # model_data.eval()
 
-    model_top = create_mixture_flow_model(
+    model_top = create_fn(
         **checkpoint_top["model_hyperparams"],
         mc_flow=model_mc,
         data_flow=model_data,

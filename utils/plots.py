@@ -47,7 +47,7 @@ transformed_ranges = {
         "probe_pfChargedIsoPFPV": [-2, 3.5],
         "probe_pfChargedIsoWorstVtx": [-5, 6],
         "probe_energyRaw": [0, 300],
-    }
+    },
 }
 
 
@@ -82,6 +82,50 @@ def dump_profile_plot(
     ax.plot(centers, qlists[mid_index], color=color, label=sample_name)
 
     return ax
+
+
+def print_mc_hist(
+    up, down, bins, range, labels, data_hist, data_centers, data_err, mc, color, weights
+):
+    norm_factor = len(mc) / np.sum(data_hist)
+    mc_hist, mc_bins = np.histogram(
+        mc, bins=bins, range=range, weights=weights
+    )
+    mc_hist = mc_hist * norm_factor
+    mc_err = np.sqrt(np.histogram(mc, bins=bins, range=range, weights=weights)[0])
+    up.stairs(
+        mc_hist,
+        mc_bins,
+        label=labels[1],
+        color=color,
+    )
+
+    mc_err = np.sqrt(np.histogram(mc, bins=bins, range=range, weights=weights)[0])
+    up.errorbar(
+        data_centers,
+        mc_hist,
+        yerr=mc_err,
+        color=color,
+        marker="",
+        linestyle="",
+        markersize=4,
+    )
+
+    rdatamc_hist = data_hist / mc_hist
+    rdatamc_err = (
+        np.sqrt((data_err / data_hist) ** 2 + (mc_err / mc_hist) ** 2)
+    ) * rdatamc_hist
+    down.errorbar(
+        data_centers,
+        rdatamc_hist,
+        yerr=rdatamc_err,
+        color=color,
+        marker="o",
+        linestyle="",
+        markersize=4,
+    )
+
+    return up, down
 
 
 def dump_main_plot(
@@ -125,56 +169,48 @@ def dump_main_plot(
         gridspec_kw={"height_ratios": (2, 1)},
         sharex=True,
     )
-    mc_hist, mc_bins, _ = up.hist(
-        mc_uncorr,
-        bins=bins,
-        range=range,
-        histtype="step",
-        label=labels[1],
-        density=True,
-        weights=weights,
-        linewidth=2,
-        color="r",
-    )
-    if mc_corr is not None:
-        mc_corr_hist, mc_corr_bins, _ = up.hist(
-            mc_corr,
-            bins=bins,
-            range=range,
-            histtype="step",
-            label=labels[2],
-            density=True,
-            weights=weights,
-            linewidth=2,
-            color="b",
+    data_hist, data_bins = np.histogram(
+        data, bins=bins, range=range, #density=True
         )
-    data_hist, data_bins = np.histogram(data, bins=bins, range=range, density=True)
     data_centers = (data_bins[1:] + data_bins[:-1]) / 2
-    up.plot(
+    data_err = np.sqrt(data_hist)
+    up.errorbar(
         data_centers,
         data_hist,
+        yerr=data_err,
         label=labels[0],
         color="k",
         marker="o",
         linestyle="",
-        markersize=3,
+        markersize=4,
     )
-    down.plot(
+    up, down = print_mc_hist(
+        up,
+        down,
+        bins,
+        range,
+        labels,
+        data_hist,
         data_centers,
-        data_hist / mc_hist,
-        color="r",
-        marker="o",
-        linestyle="",
-        markersize=3,
+        data_err,
+        mc_uncorr,
+        "r",
+        weights,
     )
+
     if mc_corr is not None:
-        down.plot(
+        up, down = print_mc_hist(
+            up,
+            down,
+            bins,
+            range,
+            labels[1],
+            data_hist,
             data_centers,
-            data_hist / mc_corr_hist,
-            color="b",
-            marker="o",
-            linestyle="",
-            markersize=3,
+            data_err,
+            mc_corr,
+            "b",
+            weights,
         )
 
     if name in ["probe_pfChargedIsoPFPV", "probe_pfPhoIso03"]:
@@ -312,14 +348,23 @@ def transform_and_plot_top(
     data_loader,
     model,
     epoch,
-    writer,
-    comet_logger,
     context_variables,
     target_variables,
     device,
     pipeline,
     calo,
+    writer=None,
+    comet_logger=None,
+    output_dir="",
 ):
+    fff = True
+    try:
+        model_mc, model_data = model
+        fff = False
+    except:
+        pass
+    logger.info("Plotting with fff: {}".format(fff))
+
     with torch.no_grad():
         data_lst, mc_lst, mc_corr_lst = [], [], []
         data_context_lst, mc_context_lst, mc_corr_context_lst = [], [], []
@@ -328,7 +373,14 @@ def transform_and_plot_top(
         for data, mc in zip(data_loader, mc_loader):
             context_data, target_data, weights_data, extra_data = data
             context_mc, target_mc, weights_mc, extra_mc = mc
-            target_mc_corr, _ = model.transform(target_mc, context_mc, inverse=False)
+            if fff:
+                target_mc_corr, _ = model.transform(
+                    target_mc, context_mc, inverse=False
+                )
+            else:  # two flows case
+                # zuko
+                latent_space_mc = model_mc(context_mc).transform(target_mc)
+                target_mc_corr = model_data(context_mc).transform.inv(latent_space_mc)
             target_data = target_data.detach().cpu().numpy()
             target_mc = target_mc.detach().cpu().numpy()
             target_mc_corr = target_mc_corr.detach().cpu().numpy()
@@ -376,14 +428,16 @@ def transform_and_plot_top(
                     "x_label": var,
                     "bins": 100,
                     "range": transformed_ranges[pipeline][var],
-                }, 
-                output_dir="",
+                },
+                output_dir=output_dir,
                 subdetector=calo,
                 mc_corr=mc_corr[var],
                 weights=weights_mc,
                 extra_name=f"_top_transformed",
-                writer_epoch=(writer, epoch),
-                cometlogger_epoch=(comet_logger, epoch),
+                writer_epoch=(writer, epoch) if writer is not None else None,
+                cometlogger_epoch=(comet_logger, epoch)
+                if comet_logger is not None
+                else None,
                 labels=None,
             )
 
@@ -417,13 +471,15 @@ def transform_and_plot_top(
                 data[var],
                 mc[var],
                 variable_conf=vars_config[var],
-                output_dir="",
+                output_dir=output_dir,
                 subdetector=calo,
                 mc_corr=mc_corr[var],
                 weights=weights_mc,
                 extra_name="_top",
-                writer_epoch=(writer, epoch),
-                cometlogger_epoch=(comet_logger, epoch),
+                writer_epoch=(writer, epoch) if writer is not None else None,
+                cometlogger_epoch=(comet_logger, epoch)
+                if comet_logger is not None
+                else None,
                 labels=None,
             )
 
@@ -453,19 +509,19 @@ def transform_and_plot_top(
     pho_id_data = calculate_photonid_mva(data_df, calo=calo)
     pho_id_mc = calculate_photonid_mva(mc_df, calo=calo)
     pho_id_mc_corr = calculate_photonid_mva(mc_corr_df, calo=calo)
-    
+
     dump_main_plot(
         pho_id_data,
         pho_id_mc,
         vars_config["probe_mvaID"],
-        output_dir="",
+        output_dir=output_dir,
         subdetector=calo,
         mc_corr=pho_id_mc_corr,
         weights=weights_mc,
         extra_name="_top",
         labels=None,
-        writer_epoch=(writer, epoch), 
-        cometlogger_epoch=(comet_logger, epoch),
+        writer_epoch=(writer, epoch) if writer is not None else None,
+        cometlogger_epoch=(comet_logger, epoch) if comet_logger is not None else None,
     )
 
     # now plot profiles
@@ -506,9 +562,7 @@ def transform_and_plot_top(
             plt.rcParams["legend.fontsize"] = 12
             fig.tight_layout()
             if writer is not None:
-                writer.add_figure(
-                    f"profiles_{column}_{cond_column}", fig, epoch
-                )
+                writer.add_figure(f"profiles_{column}_{cond_column}", fig, epoch)
                 comet_logger.log_figure(
                     f"profiles_{column}_{cond_column}", fig, step=epoch
                 )
@@ -516,7 +570,7 @@ def transform_and_plot_top(
     # close figures
     plt.close("all")
 
-    
+
 def plot_one(
     mc_test_loader,
     data_test_loader,
@@ -535,9 +589,12 @@ def plot_one(
         data_context_lst, mc_context_lst, mc_corr_context_lst = [], [], []
         mc_weights_lst = []
         data_extra_lst, mc_extr_lst = [], []
-        for (data_context, data_target, data_weights, data_extra), (mc_context, mc_target, mc_weights, mc_extra) in zip(
-            data_test_loader, mc_test_loader
-        ):
+        for (data_context, data_target, data_weights, data_extra), (
+            mc_context,
+            mc_target,
+            mc_weights,
+            mc_extra,
+        ) in zip(data_test_loader, mc_test_loader):
             data_context = data_context.to(device)
             data_target = data_target.to(device)
             mc_context = mc_context.to(device)
@@ -551,7 +608,9 @@ def plot_one(
             if "zuko" in model_name:
                 mc_target_corr = model(mc_context).transform.inv(latent_mc)
             else:
-                mc_target_corr = model._transform.inverse(latent_mc, context=mc_context)[0]
+                mc_target_corr = model._transform.inverse(
+                    latent_mc, context=mc_context
+                )[0]
             data_target = data_target.detach().cpu().numpy()
             data_context = data_context.detach().cpu().numpy()
             data_extra = data_extra.detach().cpu().numpy()
@@ -616,14 +675,10 @@ def plot_one(
 
     for var in target_variables:
         data[var] = (
-            pipeline[var]
-            .inverse_transform(data[var].values.reshape(-1, 1))
-            .reshape(-1)
+            pipeline[var].inverse_transform(data[var].values.reshape(-1, 1)).reshape(-1)
         )
         mc[var] = (
-            pipeline[var]
-            .inverse_transform(mc[var].values.reshape(-1, 1))
-            .reshape(-1)
+            pipeline[var].inverse_transform(mc[var].values.reshape(-1, 1)).reshape(-1)
         )
         mc_corr[var] = (
             pipeline[var]
@@ -665,7 +720,7 @@ def plot_one(
     pho_id_data = calculate_photonid_mva(data_df, calo=calo)
     pho_id_mc = calculate_photonid_mva(mc_df, calo=calo)
     pho_id_mc_corr = calculate_photonid_mva(mc_corr_df, calo=calo)
-    
+
     dump_main_plot(
         pho_id_data,
         pho_id_mc,
@@ -676,5 +731,5 @@ def plot_one(
         weights=mc_weights,
         extra_name="_one",
         labels=None,
-        writer_epoch=(writer, epoch), 
+        writer_epoch=(writer, epoch),
     )

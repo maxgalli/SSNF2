@@ -14,12 +14,14 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 
+import mdmm
+
 from utils.datasets import ddp_setup, ParquetDataset, ParquetDatasetOne
 from utils.custom_models import (
     create_mixture_flow_model,
     save_model,
     load_model,
-    load_fff_mixture_model,
+    load_fff_model,
 )
 from utils.models import get_conditional_base_flow, get_zuko_nsf
 from utils.plots import sample_and_plot_base, transform_and_plot_top, plot_one
@@ -408,7 +410,7 @@ def train_top(device, cfg, world_size=None, device_ids=None):
     best_train_loss = np.inf
     if cfg.checkpoint is not None:
         if cfg.model.name == "mixture":
-            model, _, _, start_epoch, th, _ = load_fff_mixture_model(
+            model, _, _, start_epoch, th, _ = load_fff_model(
                 top_file=f"{cfg.checkpoint}/checkpoint-latest.pt",
                 mc_file=f"{cfg.mc.checkpoint}/best_train_loss.pt",
                 data_file=f"{cfg.data.checkpoint}/best_train_loss.pt",
@@ -557,11 +559,28 @@ def train_top(device, cfg, world_size=None, device_ids=None):
     writer = SummaryWriter(log_dir="runs")
     comet_name = os.getcwd().split("/")[-1]
     comet_logger = setup_comet_logger(comet_name, cfg.model)
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=cfg.optimizer.learning_rate,
-        betas=(cfg.optimizer.beta1, cfg.optimizer.beta2),
-        weight_decay=cfg.optimizer.weight_decay,
+
+    # mdmm
+    distance_constraint = mdmm.MaxConstraint(
+        lambda x: x,
+        max=0.01,
+        scale=1000,
+        damping=1
+    )
+
+    mdmm_module = mdmm.MDMM(
+        [distance_constraint]
+    )
+
+    optimizer = mdmm_module.make_optimizer(
+        model.parameters(), 
+        lr=cfg.optimizer.learning_rate, 
+        #optimizer=torch.optim.Adam(
+        #    model.parameters(),
+        #    lr=cfg.optimizer.learning_rate,
+        #    betas=(cfg.optimizer.beta1, cfg.optimizer.beta2),
+        #    weight_decay=cfg.optimizer.weight_decay,
+        #)
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, cfg.epochs)
 
@@ -586,6 +605,7 @@ def train_top(device, cfg, world_size=None, device_ids=None):
         train_losses_1, test_losses_1 = [], []
         train_losses_2, test_losses_2 = [], []
         train_losses_3, test_losses_3 = [], []
+        train_loss_final, test_loss_final = [], []
         # train
         logger.info("Training...")
         for i, (data, mc) in enumerate(zip(train_loader_data, train_loader_mc)):
@@ -603,10 +623,10 @@ def train_top(device, cfg, world_size=None, device_ids=None):
                 loss1, loss2, loss3 = ddp_model.log_prob(target, context, inverse=inverse)
             else:
                 loss1, loss2, loss3 = ddp_model(target, context, inverse=inverse)
-            loss1 = loss1 * weights
-            loss2 = loss2 * weights
-            loss3 = loss3 * weights
-            loss = - loss1 - loss2 - loss3
+            loss1 = -loss1 * weights
+            loss2 = -loss2 * weights
+            loss3 = -loss3 * weights
+            loss = loss1 + loss2
             loss = loss.mean()
             loss1 = loss1.mean()
             loss2 = loss2.mean()
@@ -616,7 +636,14 @@ def train_top(device, cfg, world_size=None, device_ids=None):
             train_losses_2.append(loss2.item())
             train_losses_3.append(loss3.item())
 
-            loss.backward()
+            mdmm_return = mdmm_module(
+                loss=loss,
+                arg_list=[loss3]
+            )
+            final_loss = mdmm_return.value
+            train_loss_final.append(final_loss.item())
+
+            final_loss.backward()
             optimizer.step()
             scheduler.step()
 
@@ -625,6 +652,7 @@ def train_top(device, cfg, world_size=None, device_ids=None):
         epoch_train_loss_1 = np.mean(train_losses_1)
         epoch_train_loss_2 = np.mean(train_losses_2)
         epoch_train_loss_3 = np.mean(train_losses_3)
+        epoch_train_loss_final = np.mean(train_loss_final)
 
         # test
         print("Testing...")
@@ -640,10 +668,10 @@ def train_top(device, cfg, world_size=None, device_ids=None):
                     loss1, loss2, loss3 = ddp_model.log_prob(target, context, inverse=inverse)
                 else:
                     loss1, loss2, loss3 = ddp_model(target, context, inverse=inverse)
-                loss1 = loss1 * weights
-                loss2 = loss2 * weights
-                loss3 = loss3 * weights
-                loss = - loss1 - loss2 - loss3
+                loss1 = -loss1 * weights
+                loss2 = -loss2 * weights
+                loss3 = -loss3 * weights
+                loss = loss1 + loss2
                 loss = loss.mean()
                 loss1 = loss1.mean()
                 loss2 = loss2.mean()
@@ -690,6 +718,7 @@ def train_top(device, cfg, world_size=None, device_ids=None):
                     "val_logabsdet": epoch_test_loss_2,
                     "train_distance": epoch_train_loss_3,
                     "val_distance": epoch_test_loss_3,
+                    "train_final": epoch_train_loss_final,
                 },
                 step=epoch,
             )
@@ -702,13 +731,13 @@ def train_top(device, cfg, world_size=None, device_ids=None):
                 data_loader=test_loader_data_full,
                 model=model,
                 epoch=epoch,
-                writer=writer,
-                comet_logger=comet_logger,
                 context_variables=cfg.context_variables,
                 target_variables=cfg.target_variables,
                 device=device,
                 pipeline=cfg.pipelines,
                 calo=cfg.calo,
+                writer=writer,
+                comet_logger=comet_logger,
             )
 
         duration = time.time() - start

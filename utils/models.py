@@ -190,6 +190,6 @@ class FFFZuko(zuko.flows.core.Flow):
         log_prob = self.base_flow_log_prob(
             converted_input, context, inverse=inverse
         )
-        dist_pen = -self.distance_object(converted_input, inputs)
+        dist_pen = self.distance_object(converted_input, inputs)
 
         return log_prob, logabsdet, dist_pen
