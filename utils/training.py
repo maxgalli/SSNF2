@@ -967,7 +967,6 @@ def train_one(device, cfg, world_size=None, device_ids=None):
                 mc_test_loader=mc_test_loader,
                 data_test_loader=data_test_loader,
                 model=model,
-                model_name=cfg.model.name,
                 epoch=epoch,
                 writer=writer,
                 comet_logger=comet_logger,
