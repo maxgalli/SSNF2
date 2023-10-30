@@ -243,11 +243,20 @@ def apply_extra_selections(df):
         f"Fraction of events removed by mass selection: {(initial_len - final_len) / initial_len}"
     )
     # tag_r9  > 0.8
+    initial_len = len(df)
     df = df[df["tag_r9"] > 0.8]
-    very_final_len = len(df)
+    final_len = len(df)
     logger.info(
-        f"Fraction of events removed by tag_r9 selection: {(final_len - very_final_len) / final_len}"
+        f"Fraction of events removed by tag_r9 selection: {(initial_len - final_len) / initial_len}"
     )
+    # tag_mvaID > 0.5
+    initial_len = len(df)
+    df = df[df["tag_mvaID"] > 0.5]
+    final_len = len(df)
+    logger.info(
+        f"Fraction of events removed by tag_mvaID selection: {(initial_len - final_len) / initial_len}"
+    )
+    
     return df
 
 
@@ -272,7 +281,7 @@ def main(args):
         # turn into a dict with name as key
         vars_config = {d["name"]: d for d in vars_config}
 
-    tag_kinematics = ["tag_pt", "tag_eta", "tag_phi", "tag_r9"]
+    tag_kinematics = ["tag_pt", "tag_eta", "tag_phi", "tag_r9", "tag_mvaID"]
     context = ["probe_pt", "probe_eta", "probe_phi", "probe_fixedGridRhoAll"]
     shower_shapes = [
         "probe_r9",
@@ -422,7 +431,8 @@ def main(args):
                 f"{output_dir}/mc_{calo}_{ext}.parquet", engine="fastparquet"
             )
 
-        for version in pipelines.keys():
+        #for version in pipelines.keys():
+        for version in ["pipe1"]:
             logger.info(f"Transform data with pipeline {version}")
             dct = pipelines[version]
 
@@ -437,7 +447,9 @@ def main(args):
                 data_test_arr = data_df_test[var].values
                 mc_test_arr = mc_df_test[var].values
                 transformed_data_test_arr = pipe.fit_transform(data_test_arr.reshape(-1, 1))
+                transformed_data_test_arr = np.squeeze(transformed_data_test_arr)
                 transformed_mc_test_arr = pipe.transform(mc_test_arr.reshape(-1, 1))
+                transformed_mc_test_arr = np.squeeze(transformed_mc_test_arr)
                 local_var_config = deepcopy(vars_config[var])
                 local_var_config["range"] = transformed_ranges[version][var]
                 dump_main_plot(
@@ -455,8 +467,9 @@ def main(args):
                 # data
                 logger.info("Plot data transformed back")
                 transformed_back_data_test_arr = pipe.inverse_transform(
-                    transformed_data_test_arr
+                    transformed_data_test_arr.reshape(-1, 1)
                 )
+                transformed_back_data_test_arr = np.squeeze(transformed_back_data_test_arr)
                 dump_main_plot(
                     data_test_arr,
                     transformed_back_data_test_arr,
@@ -471,8 +484,9 @@ def main(args):
                 # mc
                 logger.info("Plot mc transformed back")
                 transformed_back_mc_test_arr = pipe.inverse_transform(
-                    transformed_mc_test_arr
+                    transformed_mc_test_arr.reshape(-1, 1)
                 )
+                transformed_back_mc_test_arr = np.squeeze(transformed_back_mc_test_arr)
                 dump_main_plot(
                     mc_test_arr,
                     transformed_back_mc_test_arr,
