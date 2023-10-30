@@ -85,33 +85,30 @@ def dump_profile_plot(
 
 
 def print_mc_hist(
-    up, down, bins, range, labels, data_hist, data_centers, data_err, mc, color, weights
+    up, down, bins, range, label, data_hist, data_hist_norm, data_centers, data_err, mc, color, weights
 ):
-    norm_factor = len(mc) / np.sum(data_hist)
+    if weights is None:
+        weights = np.ones(len(mc))
+
     mc_hist, mc_bins = np.histogram(
         mc, bins=bins, range=range, weights=weights
     )
-    mc_hist = mc_hist * norm_factor
-    mc_err = np.sqrt(np.histogram(mc, bins=bins, range=range, weights=weights)[0])
-    up.stairs(
-        mc_hist,
-        mc_bins,
-        label=labels[1],
-        color=color,
+    mc_hist_norm, _, _ = up.hist(
+        mc, bins=bins, range=range, weights=weights, density=True, label=label, color=color, histtype="step"
     )
-
-    mc_err = np.sqrt(np.histogram(mc, bins=bins, range=range, weights=weights)[0])
+    mc_err = np.sqrt(np.histogram(mc, bins=bins, range=range, weights=weights**2)[0])
+    mc_err_norm = mc_err / (np.diff(mc_bins) * np.sum(weights))
     up.errorbar(
         data_centers,
-        mc_hist,
-        yerr=mc_err,
+        mc_hist_norm,
+        yerr=mc_err_norm,
         color=color,
         marker="",
         linestyle="",
         markersize=4,
     )
 
-    rdatamc_hist = data_hist / mc_hist
+    rdatamc_hist = data_hist_norm / mc_hist_norm
     rdatamc_err = (
         np.sqrt((data_err / data_hist) ** 2 + (mc_err / mc_hist) ** 2)
     ) * rdatamc_hist
@@ -169,15 +166,17 @@ def dump_main_plot(
         gridspec_kw={"height_ratios": (2, 1)},
         sharex=True,
     )
-    data_hist, data_bins = np.histogram(
-        data, bins=bins, range=range, #density=True
-        )
+    data_hist, data_bins = np.histogram(data, bins=bins, range=range)
+    data_hist_norm, _ = np.histogram(
+        data, bins=bins, range=range, density=True
+    )
     data_centers = (data_bins[1:] + data_bins[:-1]) / 2
     data_err = np.sqrt(data_hist)
+    data_err_norm = data_err / (np.diff(data_bins) * len(data))
     up.errorbar(
         data_centers,
-        data_hist,
-        yerr=data_err,
+        data_hist_norm,
+        yerr=data_err_norm,
         label=labels[0],
         color="k",
         marker="o",
@@ -189,8 +188,9 @@ def dump_main_plot(
         down,
         bins,
         range,
-        labels,
+        labels[1],
         data_hist,
+        data_hist_norm,
         data_centers,
         data_err,
         mc_uncorr,
@@ -204,8 +204,9 @@ def dump_main_plot(
             down,
             bins,
             range,
-            labels[1],
+            labels[2],
             data_hist,
+            data_hist_norm,
             data_centers,
             data_err,
             mc_corr,
@@ -220,7 +221,7 @@ def dump_main_plot(
         down.set_xticks(ticks)
         down.set_xticklabels(ticks)
     down.set_xlabel(x_label)
-    up.set_ylabel("Events / BinWidth")
+    up.set_ylabel("Normalized yield")
     down.set_ylabel("Ratio")
     down.set_xlim(range[0], range[1])
     down.set_ylim(0.8, 1.2)
