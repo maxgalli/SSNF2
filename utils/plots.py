@@ -378,8 +378,8 @@ def sample_and_plot_base(
                 output_dir="",
                 subdetector=calo,
                 extra_name=f"_reco_sampled_transformed",
-                writer_epoch=(writer, epoch),
-                cometlogger_epoch=(comet_logger, epoch),
+                writer_epoch=(writer, epoch) if writer is not None else None,
+                cometlogger_epoch=(comet_logger, epoch) if comet_logger is not None else None,
                 labels=["Original", "Sampled"],
             )
 
@@ -411,8 +411,8 @@ def sample_and_plot_base(
             output_dir="",
             subdetector=calo,
             extra_name=f"_reco_sampled",
-            writer_epoch=(writer, epoch),
-            cometlogger_epoch=(comet_logger, epoch),
+            writer_epoch=(writer, epoch) if writer is not None else None,
+            cometlogger_epoch=(comet_logger, epoch) if comet_logger is not None else None,
             labels=["Original", "Sampled"],
         )
 
