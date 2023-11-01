@@ -8,8 +8,11 @@ from ffflows import distance_penalties
 import zuko
 from zuko.flows import NSF
 
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from pathlib import Path
 
 
 def set_penalty(f4flow, penalty, weight, anneal=False):
@@ -193,3 +196,163 @@ class FFFZuko(zuko.flows.core.Flow):
         dist_pen = self.distance_object(converted_input, inputs)
 
         return log_prob, logabsdet, dist_pen
+
+
+def save_model(
+    epoch,
+    model,
+    scheduler,
+    train_history,
+    test_history,
+    name,
+    model_dir=None,
+    optimizer=None,
+    is_ddp=False,
+):
+    """Save a model and optimizer to file.
+    Args:
+        model:      model to be saved
+        optimizer:  optimizer to be saved
+        epoch:      current epoch number
+        model_dir:  directory to save the model in
+        filename:   filename for saved model
+    """
+    if model_dir is None:
+        raise NameError("Model directory must be specified.")
+
+    filename = name
+
+    p = Path(model_dir)
+    p.mkdir(parents=True, exist_ok=True)
+
+    dict = {
+        "train_history": train_history,
+        "test_history": test_history,
+        "model_hyperparams": model.module.model_hyperparams
+        if is_ddp
+        else model.model_hyperparams,
+        "model_state_dict": model.module.state_dict() if is_ddp else model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "epoch": epoch,
+    }
+
+    if scheduler is not None:
+        dict["scheduler_state_dict"] = scheduler.state_dict()
+        dict["last_lr"] = scheduler.get_last_lr()
+
+    torch.save(dict, p / filename)
+
+
+def load_model(device, model_dir=None, filename=None, which="zuko_nfs"):
+    """Load a saved model.
+    Args:
+        filename:       File name
+    """
+    if which == "zuko_nsf":
+        create_function = get_zuko_nsf
+    else:
+        raise ValueError("which must be zuko")
+
+    if model_dir is None:
+        raise NameError(
+            "Model directory must be specified."
+            " Store in attribute PosteriorModel.model_dir"
+        )
+
+    p = Path(model_dir)
+    checkpoint = torch.load(p / filename, map_location="cpu")
+
+    model_hyperparams = checkpoint["model_hyperparams"]
+    # added because of a bug in the old create_mixture_flow_model function
+    try:
+        if checkpoint["model_hyperparams"]["base_transform_kwargs"] is not None:
+            checkpoint["model_hyperparams"]["base_kwargs"] = checkpoint[
+                "model_hyperparams"
+            ]["base_transform_kwargs"]
+            del checkpoint["model_hyperparams"]["base_transform_kwargs"]
+    except KeyError:
+        pass
+    train_history = checkpoint["train_history"]
+    test_history = checkpoint["test_history"]
+
+    # Load model
+    model = create_function(**model_hyperparams)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    # model.to(device)
+
+    # Remember that you must call model.eval() to set dropout and batch normalization layers to evaluation mode before running inference.
+    # Failing to do this will yield inconsistent inference results.
+    model.eval()
+
+    # Load optimizer
+    scheduler_present_in_checkpoint = "scheduler_state_dict" in checkpoint.keys()
+
+    # If the optimizer has more than 1 param_group, then we built it with
+    # flow_lr different from lr
+    if len(checkpoint["optimizer_state_dict"]["param_groups"]) > 1:
+        flow_lr = checkpoint["last_lr"]
+    elif checkpoint["last_lr"] is not None:
+        flow_lr = checkpoint["last_lr"][0]
+    else:
+        flow_lr = None
+
+    # Set the epoch to the correct value. This is needed to resume
+    # training.
+    epoch = checkpoint["epoch"]
+
+    return (
+        model,
+        scheduler_present_in_checkpoint,
+        flow_lr,
+        epoch,
+        train_history,
+        test_history,
+    )
+
+
+def load_fff_model(top_file, mc_file, data_file, top_penalty, which="zuko_nsf"):
+    if which == "zuko_nsf":
+        create_fn = get_zuko_nsf
+    checkpoint_top = torch.load(top_file, map_location="cpu")
+    checkpoint_mc = torch.load(mc_file, map_location="cpu")
+    checkpoint_data = torch.load(data_file, map_location="cpu")
+
+    model_mc = create_fn(**checkpoint_mc["model_hyperparams"])
+    # model_mc.load_state_dict(checkpoint_mc["model_state_dict"])
+    # model_mc.eval()
+    model_data = create_fn(**checkpoint_data["model_hyperparams"])
+    # model_data.load_state_dict(checkpoint_data["model_state_dict"])
+    # model_data.eval()
+
+    model_top = create_fn(
+        **checkpoint_top["model_hyperparams"],
+        mc_flow=model_mc,
+        data_flow=model_data,
+        penalty=top_penalty,
+    )
+    # print(model_top.state_dict()["_distribution._transform._transforms.30.autoregressive_net.blocks.0.linear_layers.0.weight"])
+    model_top.load_state_dict(checkpoint_top["model_state_dict"])
+    # print(model_top.state_dict()["_distribution._transform._transforms.30.autoregressive_net.blocks.0.linear_layers.0.weight"])
+    model_top.eval()
+
+    scheduler_present_in_checkpoint = "scheduler_state_dict" in checkpoint_top.keys()
+
+    if len(checkpoint_top["optimizer_state_dict"]["param_groups"]) > 1:
+        flow_lr = checkpoint_top["last_lr"]
+    elif checkpoint_top["last_lr"] is not None:
+        flow_lr = checkpoint_top["last_lr"][0]
+    else:
+        flow_lr = None
+
+    epoch = checkpoint_top["epoch"]
+    train_history = checkpoint_top["train_history"]
+    test_history = checkpoint_top["test_history"]
+
+    return (
+        model_top,
+        scheduler_present_in_checkpoint,
+        flow_lr,
+        epoch,
+        train_history,
+        test_history,
+    )

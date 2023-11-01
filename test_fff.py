@@ -8,12 +8,7 @@ import os
 import logging
 
 from utils.log import setup_logger
-from utils.custom_models import (
-    create_mixture_flow_model,
-    load_model,
-    load_fff_model,
-)
-from utils.models import get_zuko_nsf
+from utils.models import get_zuko_nsf, load_model, load_fff_model
 from utils.datasets import ParquetDataset
 from utils.plots import transform_and_plot_top
 
@@ -53,35 +48,7 @@ def main(args):
     logger.info("Creating model")
     input_dim = len(cfg.target_variables)
     context_dim = len(cfg.context_variables)
-    if cfg.model.name == "mixture":
-        flow_params_dct = {
-            "input_dim": input_dim,
-            "context_dim": context_dim,
-            "base_kwargs": {
-                "num_steps_maf": cfg.model.maf.num_steps,
-                "num_steps_arqs": cfg.model.arqs.num_steps,
-                "num_transform_blocks_maf": cfg.model.maf.num_transform_blocks,
-                "num_transform_blocks_arqs": cfg.model.arqs.num_transform_blocks,
-                "activation": cfg.model.activation,
-                "dropout_probability_maf": cfg.model.maf.dropout_probability,
-                "dropout_probability_arqs": cfg.model.arqs.dropout_probability,
-                "use_residual_blocks_maf": cfg.model.maf.use_residual_blocks,
-                "use_residual_blocks_arqs": cfg.model.arqs.use_residual_blocks,
-                "batch_norm_maf": cfg.model.maf.batch_norm,
-                "batch_norm_arqs": cfg.model.arqs.batch_norm,
-                "num_bins_arqs": cfg.model.arqs.num_bins,
-                "tail_bound_arqs": cfg.model.arqs.tail_bound,
-                "hidden_dim_maf": cfg.model.maf.hidden_dim,
-                "hidden_dim_arqs": cfg.model.arqs.hidden_dim,
-                "init_identity": cfg.model.init_identity,
-            },
-            "transform_type": cfg.model.transform_type,
-        }
-        create_function = create_mixture_flow_model
-        which = "mixture"
-    elif cfg.model.name == "splines":
-        pass
-    elif cfg.model.name == "zuko_nsf":
+    if cfg.model.name == "zuko_nsf":
         flow_params_dct = {
             "input_dim": input_dim,
             "context_dim": context_dim,
