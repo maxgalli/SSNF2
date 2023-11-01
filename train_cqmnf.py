@@ -44,41 +44,37 @@ class DataSet(Dataset):
         self.columns = columns
         self.dask_dataset = dd.read_parquet(path, columns=columns, engine='fastparquet')
         self.np_dataset = self.dask_dataset.values.compute()
-        self.transformed = self.transform(self.dask_dataset, self.columns)
-        self.inverse_transformed = self.inverse_transform(self.transformed, self.columns)
-        self.corrected_test = None
+        self.transformed = self.transform()
+        self.inverse_transformed = self.inverse_transform(self.transformed)
+        self.corrected_transformed = None
+        self.corrected = None
 
-    def __getitem__(self, index):
-        y = self.labels[index]
-        x = self.samples[index]
-        return x, y
-
-    def transform(self, data, columns):
+    def transform(self):
         with open(f'preprocess/pipelines_eb.pkl', 'rb') as f:
             pipelines = pickle.load(f)['pipe1']
 
             data_np = dict()
             for var, pipeline in pipelines.items():
-                if var in columns:
-                    data_np[var] = pipeline.transform(data[var].values.compute().reshape(-1, 1)).reshape(-1,1)
+                if var in self.columns:
+                    data_np[var] = pipeline.transform(self.dask_dataset[var].values.compute().reshape(-1, 1)).reshape(-1,1)
 
-        return np.concatenate([data_np[v] for v in columns],axis=1)
+        return np.concatenate([data_np[v] for v in self.columns],axis=1)
 
-    def inverse_transform(self, data, columns):
+    def inverse_transform(self, tran_data):
         with open(f'preprocess/pipelines_eb.pkl', 'rb') as f:
             pipelines = pickle.load(f)['pipe1']
-            data = dd.from_array(data, columns=columns)
+            data = dd.from_array(tran_data, columns=self.columns)
             data_np = dict()
             for var, pipeline in pipelines.items():
-                if var in columns:
+                if var in self.columns:
                     data_np[var] = pipeline.inverse_transform(data[var].values.compute().reshape(-1, 1)).reshape(-1,1)
 
-        return np.concatenate([data_np[v] for v in columns],axis=1)
+        return np.concatenate([data_np[v] for v in self.columns],axis=1)
 
     def correct(self, trainer):
 
-        correct = trainer.correctFull(self.transformed_test.copy())
-        self.corrected_test = self.inverse_transform(correct, self.columns)
+        self.corrected_transformed = trainer.correctFull(self.transformed.copy())
+        self.corrected = self.inverse_transform(self.corrected_transformed)
 
 
 # variables that have to be morphed
@@ -90,6 +86,7 @@ shower_shapes = [
     'probe_etaWidth',
     'probe_phiWidth',
 ]
+
 isolation = [
     'probe_pfPhoIso03',
     'probe_pfChargedIsoPFPV',
@@ -114,7 +111,7 @@ trainer = trainflows(
     mc_test.transformed.copy(),
     data_train.transformed.copy(),
     data_test.transformed.copy(),
-    iNLayers=2,
+    iNLayers=5,
     iSeparateScale=False)
 
 mc_test.correct(trainer)
@@ -134,6 +131,18 @@ fig_output_dirs.append(fig_output_dir)
 for col in columns:
     print(f'plotting {col}')
     dump_main_plot(
+        data_test.transformed[:, columns.index(col)],
+        mc_test.transformed[:, columns.index(col)],
+        vars_config[col],
+        fig_output_dirs,
+        'eb',
+        mc_corr=mc_test.corrected_transformed[:, columns.index(col)],
+        weights=None,
+        extra_name='_test_pre')
+
+for col in columns:
+    print(f'plotting {col}')
+    dump_main_plot(
         data_test.np_dataset[:, columns.index(col)],
         mc_test.np_dataset[:, columns.index(col)],
         vars_config[col],
@@ -141,7 +150,7 @@ for col in columns:
         'eb',
         mc_corr=mc_test.corrected[:, columns.index(col)],
         weights=None,
-        extra_name='_test_pre')
+        extra_name='_test_post')
 
 # photon ID MVA
 mc_extra = DataSet('preprocess/mc_eb_test.parquet', extra)

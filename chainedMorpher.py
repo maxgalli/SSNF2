@@ -15,6 +15,8 @@ from nflows.transforms.base import CompositeTransform
 from nflows.transforms.autoregressive import MaskedAffineAutoregressiveTransform, MaskedPiecewiseQuadraticAutoregressiveTransform, MaskedPiecewiseRationalQuadraticAutoregressiveTransform
 from nflows.transforms.permutations import ReversePermutation, RandomPermutation
 
+from customFlows import IndependentRQS
+
 import torch
 import torch.optim as optim
 import torch.nn as nn
@@ -671,12 +673,60 @@ class chainedNFTrainer:
     def stepTo(self,step):
         self.current = step
 
+# def make_flow(num_features,num_context,kwargs,perm=False,base_dist=None):
+#     flow_type = kwargs['flow_type']
+#     if base_dist is None:
+#         if num_context == 0:
+#             base_dist = StandardNormal(shape=[num_features])
+#         else:
+#             encoder = nn.Linear(num_context,2*num_features)
+#             base_dist = ConditionalDiagonalNormal(shape=[num_features],context_encoder=encoder)
+#     base_dist = StandardNormal(shape=[num_features])
+#     transforms = []
+#     if num_context == 0:
+#         num_context = None
+#     for i in range(kwargs['num_layers']):
+#         if flow_type == 'MAF':
+#             transforms.append(MaskedAffineAutoregressiveTransform(features=num_features,
+#                                                                     hidden_features=kwargs['hidden_features'],
+#                                                                     num_blocks=kwargs['num_blocks_per_layer']))
+#         elif flow_type == 'NSQUAD':
+#             transforms.append(MaskedPiecewiseQuadraticAutoregressiveTransform(features=num_features,
+#                                                                               context_features=num_context,
+#                                                                             hidden_features=num_features,
+#                                                                             num_bins=kwargs['num_bins'],
+#                                                                             num_blocks=kwargs['num_blocks_per_layer'],
+#                                                                             tail_bound=kwargs['tail_bound'],
+#                                                                             tails='linear',
+#                                                                              dropout_probability=kwargs['dropout'] if 'dropout' in kwargs.keys() else 0,
+#                                                                                 use_batch_norm=kwargs['batchnorm'] if 'batchnorm' in kwargs.keys() else False))
+#         elif flow_type == 'NSRATQUAD':
+#             transforms.append(MaskedPiecewiseRationalQuadraticAutoregressiveTransform(features=num_features,
+#                                                                                       context_features=num_context,
+#                                                                                 hidden_features=kwargs['hidden_features'],
+#                                                                                 num_bins=kwargs['num_bins'],
+#                                                                                 num_blocks=kwargs['num_blocks_per_layer'],
+#                                                                                 tail_bound=kwargs['tail_bound'],
+#                                                                                 tails=kwargs['tails'],
+#                                                                                 dropout_probability=kwargs['dropout'] if 'dropout' in kwargs.keys() else 0,
+#                                                                                 use_batch_norm=kwargs['batchnorm'] if 'batchnorm' in kwargs.keys() else False))
+
+
+#         if i < kwargs['num_layers'] - 1 and perm:
+#             transforms.append(ReversePermutation(features=num_features))
+#             #transforms.append(RandomPermutation(features=num_features))
+
+#     transform = CompositeTransform(transforms)
+#     flow = Flow(transform, base_dist)
+#     return flow
+
 def make_flow(num_features,num_context,kwargs,perm=False,base_dist=None):
     flow_type = kwargs['flow_type']
     if base_dist is None:
         if num_context == 0:
             base_dist = StandardNormal(shape=[num_features])
         else:
+            #encoder = NeuralNet(num_context, 20, 2*num_features, 3, out_act=nn.Identity())
             encoder = nn.Linear(num_context,2*num_features)
             base_dist = ConditionalDiagonalNormal(shape=[num_features],context_encoder=encoder)
     base_dist = StandardNormal(shape=[num_features])
@@ -708,6 +758,46 @@ def make_flow(num_features,num_context,kwargs,perm=False,base_dist=None):
                                                                                 tails=kwargs['tails'],
                                                                                 dropout_probability=kwargs['dropout'] if 'dropout' in kwargs.keys() else 0,
                                                                                 use_batch_norm=kwargs['batchnorm'] if 'batchnorm' in kwargs.keys() else False))
+        elif flow_type == "IRQS":
+            transforms.append(IndependentRQS(features=num_features,
+                                             context=num_context,
+                                             hidden=kwargs['hidden_features'],
+                                             num_hidden=kwargs['num_blocks_per_layer'],
+                                                num_bins=kwargs['num_bins'],
+                                                tails=kwargs['tails'],
+                                                tail_bound=kwargs['tail_bound'],
+                                            dropout=kwargs['dropout'] if 'dropout' in kwargs.keys() else 0,
+                                            residual=kwargs['residual'] if 'residual' in kwargs.keys() else False))
+        elif flow_type == "ARQS":
+            transforms.append(AutoregressiveRQS(features=num_features,
+                                             context=num_context,
+                                             hidden=kwargs['hidden_features'],
+                                             num_hidden=kwargs['num_blocks_per_layer'],
+                                                num_bins=kwargs['num_bins'],
+                                                tails=kwargs['tails'],
+                                                tail_bound=kwargs['tail_bound'],
+                                            dropout=kwargs['dropout'] if 'dropout' in kwargs.keys() else 0,
+                                            residual=kwargs['residual'] if 'residual' in kwargs.keys() else False))
+        elif flow_type == "C1D":
+            transforms.append(Conditional1DRQS(features=num_features,
+                                             context=num_context,
+                                             hidden=kwargs['hidden_features'],
+                                             num_hidden=kwargs['num_blocks_per_layer'],
+                                                num_bins=kwargs['num_bins'],
+                                                tails=kwargs['tails'],
+                                                tail_bound=kwargs['tail_bound'],
+                                            dropout=kwargs['dropout'] if 'dropout' in kwargs.keys() else 0,
+                                            residual=kwargs['residual'] if 'residual' in kwargs.keys() else False))
+        elif flow_type == "CMRQS":
+            transforms.append(ConditionalMultiRQS(features=num_features,
+                                                  num_context=num_context,
+                                             hidden=kwargs['hidden_features'],
+                                             num_hidden=kwargs['num_blocks_per_layer'],
+                                                num_bins=kwargs['num_bins'],
+                                                tails=kwargs['tails'],
+                                                tail_bound=kwargs['tail_bound'],
+                                            dropout=kwargs['dropout'] if 'dropout' in kwargs.keys() else 0,
+                                            residual=kwargs['residual'] if 'residual' in kwargs.keys() else False))
 
 
         if i < kwargs['num_layers'] - 1 and perm:
@@ -718,6 +808,7 @@ def make_flow(num_features,num_context,kwargs,perm=False,base_dist=None):
     flow = Flow(transform, base_dist)
     return flow
 
+
 def trainflows(iMC_train,
                iMC_test,
                iData_train,
@@ -725,17 +816,11 @@ def trainflows(iMC_train,
                iNLayers=1,
                iSeparateScale=False):
 
-    NF_kwargs = {"flow_type": "NSRATQUAD",
-                 "tail_bound": 3.2,
-                 "hidden_features": 150,
-                 "num_layers": iNLayers,
-                 "num_bins": 20,
-                 "num_blocks_per_layer": 1,
-                 "tails": "linear",
-                 "dropout": 0.0,
-                 "residual": True}
+    NF_kwargs = {"flow_type":"IRQS","tail_bound":3.2,"hidden_features":150,
+             "num_layers":10,"num_bins":100,"num_blocks_per_layer":1,"tails":"linear",
+            "dropout":0.0,"residual":False}
 
-    dim = 9
+    dim = iMC_train.shape[1]
     fitvars = []
 
     for i0 in range(dim):
@@ -754,8 +839,8 @@ def trainflows(iMC_train,
         rangeScale=rangeScale,
         separateScale=iSeparateScale)
 
-    bs = 10000
-    n_epoch = 10
+    bs = 100000
+    n_epoch = 100
     n_iter = n_epoch*iMC_train.shape[0]//bs
     for i0 in range(dim):
 
