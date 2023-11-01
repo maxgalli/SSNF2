@@ -7,9 +7,11 @@ import dask.dataframe as dd
 from dask.distributed import LocalCluster, Client
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import FunctionTransformer
-from sklearn.preprocessing import PowerTransformer
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import (
+    FunctionTransformer,
+    PowerTransformer,
+    StandardScaler,
+    MinMaxScaler)
 import cloudpickle
 from copy import deepcopy
 import os
@@ -137,7 +139,7 @@ pipelines = {
         # Context
         "probe_pt": Pipeline(
             [
-                ("box_cox", PowerTransformer(method="box-cox")),
+                ("box_cox", PowerTransformer(method="box-cox"))
             ]
         ),
         "probe_eta": Pipeline(
@@ -152,32 +154,32 @@ pipelines = {
         ),
         "probe_fixedGridRhoAll": Pipeline(
             [
-                ("standard", StandardScaler()),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
             ]
         ),
         # Shower shapes
         "probe_r9": Pipeline(
             [
                 ("johnson", PowerTransformer(method="yeo-johnson")),
-                ("standard", StandardScaler()),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
             ]
         ),
         "probe_s4": Pipeline(
             [
                 ("johnson", PowerTransformer(method="yeo-johnson")),
-                ("standard", StandardScaler()),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
             ]
         ),
         "probe_sieie": Pipeline(
             [
                 ("box_cox", PowerTransformer(method="box-cox")),
-                ("standard", StandardScaler()),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
             ]
         ),
         "probe_sieip": Pipeline(
             [
                 ("log", FunctionTransformer(np.log1p, np.expm1)),
-                ("standard", StandardScaler()),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
             ]
         ),
         "probe_etaWidth": Pipeline(
@@ -189,31 +191,31 @@ pipelines = {
                         inverse_func=lambda x: (np.tan(x) + 0.15) / 100,
                     ),
                 ),
-                ("standard", StandardScaler()),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
             ]
         ),
         "probe_phiWidth": Pipeline(
             [
                 ("log", FunctionTransformer(np.log, np.exp)),
-                ("standard", StandardScaler()),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
             ]
         ),
         "probe_pfPhoIso03": Pipeline(
             [
                 ("sampler", IsoTransformerLNorm()),
-                ("standard", StandardScaler()),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
             ]
         ),
         "probe_pfChargedIsoPFPV": Pipeline(
             [
                 ("sampler", IsoTransformerLNorm()),
-                ("standard", StandardScaler()),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
             ]
         ),
         "probe_pfChargedIsoWorstVtx": Pipeline(
             [
                 ("sampler", IsoTransformerLNorm()),
-                ("standard", StandardScaler()),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
             ]
         ),
         # Others
@@ -505,21 +507,21 @@ def main(args):
             with open(os.path.join(output_dir, f"pipelines_{calo}.pkl"), "wb") as f:
                 cloudpickle.dump(pipelines, f)
 
-        # photon ID MVA
-        logger.info("Calculate photon ID MVA")
-        pho_id_data_test = calculate_photonid_mva(data_df_test, calo)
-        pho_id_mc_test = calculate_photonid_mva(mc_df_test, calo)
+        # # photon ID MVA
+        # logger.info("Calculate photon ID MVA")
+        # pho_id_data_test = calculate_photonid_mva(data_df_test, calo)
+        # pho_id_mc_test = calculate_photonid_mva(mc_df_test, calo)
 
-        dump_main_plot(
-            pho_id_data_test,
-            pho_id_mc_test,
-            vars_config["probe_mvaID"],
-            fig_output_dirs,
-            calo,
-            mc_corr=None,
-            weights=test_weights,
-            extra_name="_test_reweighted",
-        )
+        # dump_main_plot(
+        #     pho_id_data_test,
+        #     pho_id_mc_test,
+        #     vars_config["probe_mvaID"],
+        #     fig_output_dirs,
+        #     calo,
+        #     mc_corr=None,
+        #     weights=test_weights,
+        #     extra_name="_test_reweighted",
+        # )
 
 
 if __name__ == "__main__":
