@@ -30,6 +30,16 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="")
 
     parser.add_argument(
+        "--pipelines",
+        type=list,
+        default=[
+            "pipe0",
+            "pipe1",
+            "pipe_cqmnf1",
+        ],
+    )
+
+    parser.add_argument(
         "--data-file-pattern",
         type=str,
         default="../NormalizingFlow/samples/data/DoubleEG/nominal/*.parquet",
@@ -520,8 +530,7 @@ def main(args):
                 f"{output_dir}/mc_{calo}_{ext}.parquet", engine="fastparquet"
             )
 
-        #for version in pipelines.keys():
-        for version in ["pipe1"]:
+        for version in args.pipelines:
             logger.info(f"Transform data with pipeline {version}")
             dct = pipelines[version]
 
