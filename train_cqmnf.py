@@ -51,7 +51,7 @@ class DataSet(Dataset):
 
     def transform(self):
         with open(f'preprocess/pipelines_eb.pkl', 'rb') as f:
-            pipelines = pickle.load(f)['pipe1']
+            pipelines = pickle.load(f)['pipe_cqmnf1']
 
             data_np = dict()
             for var, pipeline in pipelines.items():
@@ -62,7 +62,7 @@ class DataSet(Dataset):
 
     def inverse_transform(self, tran_data):
         with open(f'preprocess/pipelines_eb.pkl', 'rb') as f:
-            pipelines = pickle.load(f)['pipe1']
+            pipelines = pickle.load(f)['pipe_cqmnf1']
             data = dd.from_array(tran_data, columns=self.columns)
             data_np = dict()
             for var, pipeline in pipelines.items():
