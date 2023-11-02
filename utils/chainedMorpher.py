@@ -15,7 +15,7 @@ from nflows.transforms.base import CompositeTransform
 from nflows.transforms.autoregressive import MaskedAffineAutoregressiveTransform, MaskedPiecewiseQuadraticAutoregressiveTransform, MaskedPiecewiseRationalQuadraticAutoregressiveTransform
 from nflows.transforms.permutations import ReversePermutation, RandomPermutation
 
-from customFlows import IndependentRQS
+from .customFlows import IndependentRQS
 
 import torch
 import torch.optim as optim

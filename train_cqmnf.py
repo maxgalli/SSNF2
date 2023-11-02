@@ -29,7 +29,7 @@ from torch.utils.data import (
     random_split
     )
 
-from chainedMorpher import *
+from utils.chainedMorpher import *
 from utils.plots import dump_main_plot
 from utils.phoid import calculate_photonid_mva
 

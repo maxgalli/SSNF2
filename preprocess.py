@@ -32,12 +32,12 @@ def parse_arguments():
     parser.add_argument(
         "--data-file-pattern",
         type=str,
-        default="/eos/cms/store/group/ml/ML4ReweightingHackathon/FFFHgg/data/DoubleEG/nominal/*.parquet",
+        default="../NormalizingFlow/samples/data/DoubleEG/nominal/*.parquet",
     )
     parser.add_argument(
         "--mc-uncorr-file-pattern",
         type=str,
-        default="/eos/cms/store/group/ml/ML4ReweightingHackathon/FFFHgg/mc_uncorr/DYJetsToLL_M-50_TuneCP5_13TeV-amcatnloFXFX-pythia8/nominal/*.parquet",
+        default="../NormalizingFlow/samples/mc_uncorr/DYJetsToLL_M-50_TuneCP5_13TeV-amcatnloFXFX-pythia8/nominal/*.parquet",
     )
     parser.add_argument("--extra-output-dir", type=str, default=None)
 
@@ -154,6 +154,92 @@ pipelines = {
         ),
         "probe_fixedGridRhoAll": Pipeline(
             [
+                ("standard", StandardScaler()),
+            ]
+        ),
+        # Shower shapes
+        "probe_r9": Pipeline(
+            [
+                ("johnson", PowerTransformer(method="yeo-johnson")),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_s4": Pipeline(
+            [
+                ("johnson", PowerTransformer(method="yeo-johnson")),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_sieie": Pipeline(
+            [
+                ("box_cox", PowerTransformer(method="box-cox")),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_sieip": Pipeline(
+            [
+                ("log", FunctionTransformer(np.log1p, np.expm1)),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_etaWidth": Pipeline(
+            [
+                (
+                    "arctan_trans",
+                    FunctionTransformer(
+                        lambda x: np.arctan(x * 100 - 0.15),
+                        inverse_func=lambda x: (np.tan(x) + 0.15) / 100,
+                    ),
+                ),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_phiWidth": Pipeline(
+            [
+                ("log", FunctionTransformer(np.log, np.exp)),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_pfPhoIso03": Pipeline(
+            [
+                ("sampler", IsoTransformerLNorm()),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_pfChargedIsoPFPV": Pipeline(
+            [
+                ("sampler", IsoTransformerLNorm()),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_pfChargedIsoWorstVtx": Pipeline(
+            [
+                ("sampler", IsoTransformerLNorm()),
+                ("standard", StandardScaler()),
+            ]
+        ),
+        # Others
+        "probe_energyRaw": Pipeline([("none", None)]),
+    },
+    "pipe_cqmnf1": {
+        # Context
+        "probe_pt": Pipeline(
+            [
+                ("box_cox", PowerTransformer(method="box-cox"))
+            ]
+        ),
+        "probe_eta": Pipeline(
+            [
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_phi": Pipeline(
+            [
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_fixedGridRhoAll": Pipeline(
+            [
                 ("min-max", MinMaxScaler(feature_range=(-3, 3)))
             ]
         ),
@@ -221,6 +307,7 @@ pipelines = {
         # Others
         "probe_energyRaw": Pipeline([("none", None)]),
     },
+
 }
 
 
@@ -507,21 +594,21 @@ def main(args):
             with open(os.path.join(output_dir, f"pipelines_{calo}.pkl"), "wb") as f:
                 cloudpickle.dump(pipelines, f)
 
-        # # photon ID MVA
-        # logger.info("Calculate photon ID MVA")
-        # pho_id_data_test = calculate_photonid_mva(data_df_test, calo)
-        # pho_id_mc_test = calculate_photonid_mva(mc_df_test, calo)
+        # photon ID MVA
+        logger.info("Calculate photon ID MVA")
+        pho_id_data_test = calculate_photonid_mva(data_df_test, calo)
+        pho_id_mc_test = calculate_photonid_mva(mc_df_test, calo)
 
-        # dump_main_plot(
-        #     pho_id_data_test,
-        #     pho_id_mc_test,
-        #     vars_config["probe_mvaID"],
-        #     fig_output_dirs,
-        #     calo,
-        #     mc_corr=None,
-        #     weights=test_weights,
-        #     extra_name="_test_reweighted",
-        # )
+        dump_main_plot(
+            pho_id_data_test,
+            pho_id_mc_test,
+            vars_config["probe_mvaID"],
+            fig_output_dirs,
+            calo,
+            mc_corr=None,
+            weights=test_weights,
+            extra_name="_test_reweighted",
+        )
 
 
 if __name__ == "__main__":

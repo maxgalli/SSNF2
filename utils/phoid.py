@@ -59,7 +59,7 @@ def calculate_photonid_mva(dataframe, calo):
 
     photonid_mva = load_photonid_mva(phoid_files[calo])
 
-    bdt_inputs = dataframe[var_order].values.compute()
+    bdt_inputs = dataframe[var_order].to_numpy()
     tempmatrix = xgboost.DMatrix(
         bdt_inputs, feature_names=[var.replace("probe_", "") for var in var_order]
     )
