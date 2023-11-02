@@ -59,3 +59,8 @@ mc:
 or from the command line as it is done for ```calo```.
 
 ## Testing
+
+## Notes about CQMNF
+
+The code uses a patched version of version 0.12 of nflows, which can be found
+[here](https://github.com/maxgalli/nflows/tree/v0.12_ph).
