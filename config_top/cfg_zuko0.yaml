@@ -27,28 +27,32 @@ test:
   size: 100000
   batch_size: 2048
 data:
-  checkpoint: /work/gallim/devel/CQRRelatedStudies/SSNF2/outputs/base_cfg_zuko0_data_eb-2023-09-25-17-16-02
+  checkpoint: /work/gallim/devel/CQRRelatedStudies/SSNF2/outputs/base_cfg_zuko0_data_eb-2023-10-30-17-34-31
 mc:
-  checkpoint: /work/gallim/devel/CQRRelatedStudies/SSNF2/outputs/base_cfg_zuko0_mc_eb-2023-09-25-13-14-10
+  checkpoint: /work/gallim/devel/CQRRelatedStudies/SSNF2/outputs/base_cfg_zuko0_mc_eb-2023-10-30-17-34-23
 model:
   name: zuko_nsf
   ntransforms: 12
   nbins: 16
   nnodes: 512
-  nlayers: 4
+  nlayers: 3
   penalty: l1
-  penalty_weight: 0.1
+  penalty_weight: 0.005
   anneal: 0
+mdmm:
+  max: 0.005
+  scale: 10000
+  damping: 100
 optimizer:
   learning_rate: 1e-4
   beta1: 0.9
   beta2: 0.999
   weight_decay: 1e-5
 stopper:
-  patience: 10
+  patience: 15
   min_delta: 0.05
 #distributed: True
 distributed: False
-epochs: 400
-sample_every: 10
+epochs: 200
+sample_every: 5
 checkpoint: null

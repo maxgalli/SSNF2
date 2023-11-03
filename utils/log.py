@@ -58,7 +58,28 @@ def setup_logger(
     return logger
 
 
-def setup_comet_logger(name, cfg_model):
+def hydra_config_to_flat_dict(cfg):
+    """Converts a Hydra config object to a flat dictionary.
+    If one has for instance 
+    {"a": 1, "b": {"c": 2, "d": 3}}
+    it will be
+    {"a": 1, "b.c": 2, "b.d": 3}
+    """
+
+    def _flatten(d, parent_key="", sep="."):
+        items = []
+        for k, v in d.items():
+            new_key = parent_key + sep + k if parent_key else k
+            if isinstance(v, dict):
+                items.extend(_flatten(v, new_key, sep=sep).items())
+            else:
+                items.append((new_key, v))
+        return dict(items)
+
+    return _flatten(cfg)
+
+
+def setup_comet_logger(name, cfg):
     comet_logger = Experiment(
         api_key="DzzVXiirHMuZBc2iIketfZWbm",
         workspace="maxgalli",
@@ -67,6 +88,6 @@ def setup_comet_logger(name, cfg_model):
         #save_dir="",
     )
     comet_logger.set_name(name)
-    for k, v in cfg_model.items():
+    for k, v in cfg.items():
         comet_logger.log_parameter(k, v)
     return comet_logger
