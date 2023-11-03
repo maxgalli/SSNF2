@@ -7,9 +7,11 @@ import dask.dataframe as dd
 from dask.distributed import LocalCluster, Client
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import FunctionTransformer
-from sklearn.preprocessing import PowerTransformer
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import (
+    FunctionTransformer,
+    PowerTransformer,
+    StandardScaler,
+    MinMaxScaler)
 import cloudpickle
 from copy import deepcopy
 import os
@@ -26,6 +28,16 @@ from utils.phoid import calculate_photonid_mva
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="")
+
+    parser.add_argument(
+        "--pipelines",
+        type=list,
+        default=[
+            "pipe0",
+            "pipe1",
+            "pipe_cqmnf1",
+        ],
+    )
 
     parser.add_argument(
         "--data-file-pattern",
@@ -137,7 +149,7 @@ pipelines = {
         # Context
         "probe_pt": Pipeline(
             [
-                ("box_cox", PowerTransformer(method="box-cox")),
+                ("box_cox", PowerTransformer(method="box-cox"))
             ]
         ),
         "probe_eta": Pipeline(
@@ -219,6 +231,93 @@ pipelines = {
         # Others
         "probe_energyRaw": Pipeline([("none", None)]),
     },
+    "pipe_cqmnf1": {
+        # Context
+        "probe_pt": Pipeline(
+            [
+                ("box_cox", PowerTransformer(method="box-cox"))
+            ]
+        ),
+        "probe_eta": Pipeline(
+            [
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_phi": Pipeline(
+            [
+                ("standard", StandardScaler()),
+            ]
+        ),
+        "probe_fixedGridRhoAll": Pipeline(
+            [
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
+            ]
+        ),
+        # Shower shapes
+        "probe_r9": Pipeline(
+            [
+                ("johnson", PowerTransformer(method="yeo-johnson")),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
+            ]
+        ),
+        "probe_s4": Pipeline(
+            [
+                ("johnson", PowerTransformer(method="yeo-johnson")),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
+            ]
+        ),
+        "probe_sieie": Pipeline(
+            [
+                ("box_cox", PowerTransformer(method="box-cox")),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
+            ]
+        ),
+        "probe_sieip": Pipeline(
+            [
+                ("log", FunctionTransformer(np.log1p, np.expm1)),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
+            ]
+        ),
+        "probe_etaWidth": Pipeline(
+            [
+                (
+                    "arctan_trans",
+                    FunctionTransformer(
+                        lambda x: np.arctan(x * 100 - 0.15),
+                        inverse_func=lambda x: (np.tan(x) + 0.15) / 100,
+                    ),
+                ),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
+            ]
+        ),
+        "probe_phiWidth": Pipeline(
+            [
+                ("log", FunctionTransformer(np.log, np.exp)),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
+            ]
+        ),
+        "probe_pfPhoIso03": Pipeline(
+            [
+                ("sampler", IsoTransformerLNorm()),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
+            ]
+        ),
+        "probe_pfChargedIsoPFPV": Pipeline(
+            [
+                ("sampler", IsoTransformerLNorm()),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
+            ]
+        ),
+        "probe_pfChargedIsoWorstVtx": Pipeline(
+            [
+                ("sampler", IsoTransformerLNorm()),
+                ("min-max", MinMaxScaler(feature_range=(-3, 3)))
+            ]
+        ),
+        # Others
+        "probe_energyRaw": Pipeline([("none", None)]),
+    },
+
 }
 
 
@@ -431,8 +530,7 @@ def main(args):
                 f"{output_dir}/mc_{calo}_{ext}.parquet", engine="fastparquet"
             )
 
-        #for version in pipelines.keys():
-        for version in ["pipe1"]:
+        for version in args.pipelines:
             logger.info(f"Transform data with pipeline {version}")
             dct = pipelines[version]
 

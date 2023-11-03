@@ -48,6 +48,22 @@ transformed_ranges = {
         "probe_pfChargedIsoWorstVtx": [-5, 6],
         "probe_energyRaw": [0, 300],
     },
+    "pipe_cqmnf1": {
+        "probe_pt": [-4, 4],
+        "probe_eta": [-2, 2],
+        "probe_phi": [-2, 2],
+        "probe_fixedGridRhoAll": [-3, 5],
+        "probe_r9": [-2, 2],
+        "probe_s4": [-2, 3],
+        "probe_sieie": [-6, 6],
+        "probe_sieip": [-6, 6],
+        "probe_etaWidth": [-3, 5],
+        "probe_phiWidth": [-3, 3],
+        "probe_pfPhoIso03": [-3, 3],
+        "probe_pfChargedIsoPFPV": [-2, 3.5],
+        "probe_pfChargedIsoWorstVtx": [-5, 6],
+        "probe_energyRaw": [0, 300],
+    }
 }
 
 
